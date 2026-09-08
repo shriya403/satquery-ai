@@ -1,0 +1,66 @@
+{
+  "datasets": [
+    {
+      "dataset_id": "sentinel2-pune-khadakwasla-2024-03-04",
+      "name": "Sentinel-2 L2A Khadakwasla/Pune demo chip",
+      "provider": "Copernicus Sentinel-2 L2A via Element 84 Earth Search / AWS Open Data",
+      "source_url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2A_43QCA_20240304_0_L2A",
+      "licence_or_usage": "Copernicus Sentinel data are available on a free, full and open basis; public communication should acknowledge 'Copernicus Sentinel data 2024'.",
+      "usage_note": "Real Sentinel-2 L2A optical sample clipped for offline demonstration; water detection is algorithmic and not externally validated.",
+      "acquisition_date": "2024-03-04T05:43:56.801000Z",
+      "location": "Khadakwasla/Pune, Maharashtra, India",
+      "crs": "EPSG:32643",
+      "pixel_size_m": 10.0,
+      "aoi_bbox_wgs84": [
+        73.735,
+        18.405,
+        73.815,
+        18.475
+      ],
+      "stac_item_id": "S2A_43QCA_20240304_0_L2A",
+      "stac_copy": "sentinel2_pune_khadakwasla_20240304.stac-item.json",
+      "cloud_cover_percent": 6e-05,
+      "path": "sentinel2_pune_khadakwasla_20240304.tif",
+      "checksum_sha256": "3aa402f40c9cef6581cd580dc7a196a6f420040ab2673bea416a71fb68c5f70d",
+      "bands": [
+        {
+          "name": "blue",
+          "description": "Sentinel-2 MSI Band 02 blue surface reflectance, 10 m",
+          "source_asset": "blue",
+          "source_href": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/43/Q/CA/2024/3/S2A_43QCA_20240304_0_L2A/B02.tif"
+        },
+        {
+          "name": "green",
+          "description": "Sentinel-2 MSI Band 03 green surface reflectance, 10 m",
+          "source_asset": "green",
+          "source_href": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/43/Q/CA/2024/3/S2A_43QCA_20240304_0_L2A/B03.tif"
+        },
+        {
+          "name": "red",
+          "description": "Sentinel-2 MSI Band 04 red surface reflectance, 10 m",
+          "source_asset": "red",
+          "source_href": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/43/Q/CA/2024/3/S2A_43QCA_20240304_0_L2A/B04.tif"
+        },
+        {
+          "name": "nir",
+          "description": "Sentinel-2 MSI Band 08 near-infrared surface reflectance, 10 m",
+          "source_asset": "nir",
+          "source_href": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/43/Q/CA/2024/3/S2A_43QCA_20240304_0_L2A/B08.tif"
+        },
+        {
+          "name": "swir",
+          "description": "Sentinel-2 MSI Band 11 short-wave infrared surface reflectance, resampled from 20 m to 10 m",
+          "source_asset": "swir16",
+          "source_href": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/43/Q/CA/2024/3/S2A_43QCA_20240304_0_L2A/B11.tif"
+        }
+      ],
+      "preprocessing": [
+        "Queried exact Earth Search STAC item S2A_43QCA_20240304_0_L2A.",
+        "Clipped bands to AOI bbox [73.735, 18.405, 73.815, 18.475] in EPSG:4326.",
+        "Converted Sentinel-2 scaled reflectance digital numbers to float reflectance by dividing by 10000.",
+        "Resampled Band 11 SWIR from 20 m to the 10 m Band 03 reference grid using bilinear resampling.",
+        "Wrote a local compressed multiband GeoTIFF for offline demo reproducibility."
+      ]
+    }
+  ]
+}
