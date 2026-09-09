@@ -12,6 +12,7 @@ htmlcov/
 
 node_modules/
 .next/
+*.tsbuildinfo
 dist/
 build/
 

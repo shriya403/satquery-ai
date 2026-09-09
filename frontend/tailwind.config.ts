@@ -20,8 +20,8 @@ const config: Config = {
         }
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "Arial", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "Consolas", "monospace"]
+        sans: ["Arial", "Helvetica", "sans-serif"],
+        mono: ["Consolas", "Menlo", "monospace"]
       },
       boxShadow: {
         workstation: "0 18px 60px rgba(0, 0, 0, 0.28)"

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GeoJSON as LeafletGeoJson, ImageOverlay, LatLngBounds, Map } from "leaflet";
-import type { AnalysisResponse, DemoDataset } from "@/lib/types";
-import { previewUrl } from "@/lib/api";
+import { previewUrl } from "../lib/api";
+import type { AnalysisResponse, DemoDataset } from "../lib/types";
 
 type MapCanvasProps = {
   dataset: DemoDataset | null;
@@ -11,6 +11,9 @@ type MapCanvasProps = {
   showRaster: boolean;
   showOverlay: boolean;
   highlightLargest: boolean;
+  overlayOpacity: number;
+  selectedFeatureId: string | null;
+  onFeatureSelect: (featureId: string) => void;
 };
 
 export function MapCanvas({
@@ -18,13 +21,18 @@ export function MapCanvas({
   response,
   showRaster,
   showOverlay,
-  highlightLargest
+  highlightLargest,
+  overlayOpacity,
+  selectedFeatureId,
+  onFeatureSelect
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const imageRef = useRef<ImageOverlay | null>(null);
   const overlayRef = useRef<LeafletGeoJson | null>(null);
   const boundsRef = useRef<LatLngBounds | null>(null);
+  const fittedDatasetIdRef = useRef<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,24 +51,31 @@ export function MapCanvas({
         zoomControl: true,
         attributionControl: true,
         minZoom: 8,
-        maxZoom: 18
+        maxZoom: 18,
+        keyboard: true
       });
       leaflet.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
       mapRef.current = map;
+      setMapReady(true);
     }
 
     initialiseMap();
 
     return () => {
       cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function renderDataset() {
+    async function fitDatasetToScene() {
       if (!dataset || !mapRef.current) {
+        fittedDatasetIdRef.current = null;
         return;
       }
 
@@ -73,30 +88,60 @@ export function MapCanvas({
       const bounds = leaflet.latLngBounds([south, west], [north, east]);
       boundsRef.current = bounds;
 
+      if (fittedDatasetIdRef.current !== dataset.dataset_id) {
+        fittedDatasetIdRef.current = dataset.dataset_id;
+        mapRef.current.fitBounds(bounds, { padding: [18, 18], animate: false });
+      }
+    }
+
+    fitDatasetToScene();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataset, mapReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderDatasetImage() {
+      if (!mapRef.current) {
+        return;
+      }
+
+      const leaflet = await import("leaflet");
+      if (cancelled || !mapRef.current) {
+        return;
+      }
+
       if (imageRef.current) {
         imageRef.current.remove();
         imageRef.current = null;
       }
 
-      if (showRaster) {
-        imageRef.current = leaflet
-          .imageOverlay(previewUrl(dataset.dataset_id), bounds, {
-            opacity: 0.92,
-            interactive: false,
-            alt: `${dataset.name} preview`
-          })
-          .addTo(mapRef.current);
+      if (!dataset || !showRaster) {
+        return;
       }
 
-      mapRef.current.fitBounds(bounds, { padding: [18, 18], animate: false });
+      const [west, south, east, north] = dataset.bounds_wgs84;
+      const bounds = leaflet.latLngBounds([south, west], [north, east]);
+      boundsRef.current = bounds;
+
+      imageRef.current = leaflet
+        .imageOverlay(previewUrl(dataset.dataset_id), bounds, {
+          opacity: 0.92,
+          interactive: false,
+          alt: `${dataset.name} preview`
+        })
+        .addTo(mapRef.current);
     }
 
-    renderDataset();
+    renderDatasetImage();
 
     return () => {
       cancelled = true;
     };
-  }, [dataset, showRaster]);
+  }, [dataset, showRaster, mapReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,33 +165,36 @@ export function MapCanvas({
         return;
       }
 
+      const largestFeatureId = response.overlays[0]?.properties.id;
+
       overlayRef.current = leaflet
         .geoJSON(response.overlays, {
           style: (feature) => {
-            const isLargest = feature?.properties?.id === "water-1";
+            const featureId = feature?.properties?.id;
+            const isLargest = featureId === largestFeatureId;
+            const isSelected = featureId === selectedFeatureId;
+            const color = isLargest && highlightLargest ? "var(--largest)" : "var(--water)";
             return {
-              color: isLargest && highlightLargest ? "#f59e0b" : "#38bdf8",
-              fillColor: isLargest && highlightLargest ? "#f59e0b" : "#38bdf8",
-              fillOpacity: isLargest && highlightLargest ? 0.34 : 0.24,
+              color,
+              fillColor: color,
+              fillOpacity: isSelected ? Math.min(overlayOpacity + 0.18, 0.72) : overlayOpacity,
               opacity: 0.96,
-              weight: isLargest && highlightLargest ? 3 : 2
+              weight: isSelected ? 4 : isLargest && highlightLargest ? 3 : 2
             };
           },
           onEachFeature: (feature, layer) => {
             const props = feature.properties as { id?: string; area_ha?: number; confidence?: number };
+            if (props.id) {
+              layer.on("click", () => onFeatureSelect(props.id as string));
+            }
             layer.bindPopup(
-              `<strong>${props.id ?? "water"}</strong><br/>Area: ${props.area_ha ?? "n/a"} ha<br/>Confidence: ${props.confidence ?? "n/a"}`
+              `<strong>${props.id ?? "water"}</strong><br/>Area: ${props.area_ha ?? "n/a"} ha<br/>Heuristic score: ${
+                props.confidence ?? "n/a"
+              } (uncalibrated)`
             );
           }
         })
         .addTo(mapRef.current);
-
-      const overlayBounds = overlayRef.current.getBounds();
-      if (overlayBounds.isValid()) {
-        mapRef.current.fitBounds(overlayBounds, { padding: [32, 32], animate: false });
-      } else if (boundsRef.current) {
-        mapRef.current.fitBounds(boundsRef.current, { padding: [18, 18], animate: false });
-      }
     }
 
     renderOverlay();
@@ -154,27 +202,27 @@ export function MapCanvas({
     return () => {
       cancelled = true;
     };
-  }, [response, showOverlay, highlightLargest]);
+  }, [response, showOverlay, highlightLargest, overlayOpacity, selectedFeatureId, onFeatureSelect, mapReady]);
 
   return (
-    <div className="relative h-full min-h-[420px] overflow-hidden border border-neutral-700 bg-carbon-900" data-testid="map-shell">
-      <div ref={containerRef} className="h-full min-h-[420px]" data-testid="map-canvas" />
+    <>
+      <div ref={containerRef} className="map-canvas" data-testid="map-canvas" />
       {!dataset ? (
-        <div className="absolute inset-0 grid place-items-center bg-carbon-900 text-sm text-neutral-300">
+        <div className="map-empty">
           Start the backend and load a demo dataset.
         </div>
       ) : null}
-      <div className="absolute bottom-3 right-3 max-w-[280px] border border-neutral-700 bg-carbon-950/90 px-3 py-2 text-xs text-neutral-200 shadow-workstation">
-        <div className="font-semibold text-neutral-50">Legend</div>
+      <div className="map-legend" data-testid="map-legend">
+        <div className="font-semibold text-[var(--text-primary)]">Legend</div>
         <div className="mt-1 flex items-center gap-2">
-          <span className="h-2.5 w-5 border border-signal-cyan bg-signal-cyan/30" />
+          <span className="legend-swatch legend-water" />
           <span>Detected water region</span>
         </div>
         <div className="mt-1 flex items-center gap-2">
-          <span className="h-2.5 w-5 border border-signal-amber bg-signal-amber/30" />
+          <span className="legend-swatch legend-largest" />
           <span>Largest water polygon</span>
         </div>
       </div>
-    </div>
+    </>
   );
 }
