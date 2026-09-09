@@ -32,6 +32,15 @@ type EarthSceneProps = {
 
 const EARTH_RADIUS = 1.48;
 
+function wrapLongitude(value: number): number {
+  return ((value + 540) % 360) - 180;
+}
+
+function lerpLongitude(from: number, to: number, alpha: number): number {
+  const delta = wrapLongitude(to - from);
+  return wrapLongitude(from + delta * alpha);
+}
+
 function latLonToVector(lat: number, lon: number, radius: number): Vector3 {
   const phi = MathUtils.degToRad(90 - lat);
   const theta = MathUtils.degToRad(lon + 180);
@@ -53,37 +62,31 @@ function CameraRig({
   onViewChange
 }: Pick<EarthSceneProps, "autoRotate" | "reducedMotion" | "view" | "onViewChange">) {
   const current = useRef({ ...view });
+  const target = useRef({ ...view });
   const lastSpinAt = useRef(0);
 
   useEffect(() => {
-    current.current = {
-      ...current.current,
-      distance: view.distance
-    };
-  }, [view.distance]);
+    target.current = { ...view };
+  }, [view]);
 
   useFrame((state, delta) => {
     if (document.hidden) {
       return;
     }
 
-    const damping = reducedMotion ? 1 : 1 - Math.exp(-delta * 4.8);
-    current.current.lat = MathUtils.lerp(current.current.lat, view.lat, damping);
-    current.current.lon = MathUtils.lerp(current.current.lon, view.lon, damping);
-    current.current.distance = MathUtils.lerp(current.current.distance, view.distance, damping);
-
     if (autoRotate && !reducedMotion) {
+      target.current.lon = wrapLongitude(target.current.lon + delta * 2.4);
       lastSpinAt.current += delta;
-      current.current.lon = ((current.current.lon + delta * 2.4 + 540) % 360) - 180;
       if (lastSpinAt.current > 0.5) {
         lastSpinAt.current = 0;
-        onViewChange({
-          lat: view.lat,
-          lon: ((view.lon + 1.2 + 540) % 360) - 180,
-          distance: view.distance
-        });
+        onViewChange({ ...target.current });
       }
     }
+
+    const damping = reducedMotion ? 1 : 1 - Math.exp(-delta * 4.8);
+    current.current.lat = MathUtils.lerp(current.current.lat, target.current.lat, damping);
+    current.current.lon = lerpLongitude(current.current.lon, target.current.lon, damping);
+    current.current.distance = MathUtils.lerp(current.current.distance, target.current.distance, damping);
 
     const position = latLonToVector(current.current.lat, current.current.lon, current.current.distance);
     state.camera.position.copy(position);
@@ -144,8 +147,8 @@ function EarthMesh({ textureUrl, onSceneReady }: Pick<EarthSceneProps, "textureU
   useEffect(() => {
     texture.colorSpace = SRGBColorSpace;
     texture.anisotropy = 4;
+    texture.needsUpdate = true;
     onSceneReady();
-    return () => texture.dispose();
   }, [onSceneReady, texture]);
 
   return (
@@ -191,6 +194,9 @@ function DatasetMarkers({
           <mesh
             key={scene.dataset.dataset_id}
             position={position}
+            onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+              event.stopPropagation();
+            }}
             onClick={(event: ThreeEvent<MouseEvent>) => {
               event.stopPropagation();
               onSceneSelect(scene.dataset.dataset_id);

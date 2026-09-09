@@ -55,6 +55,18 @@ const METRIC_LABELS: Record<string, string> = {
   min_component_pixels: "Minimum component pixels"
 };
 
+const EXECUTION_PIPELINE = [
+  { tool: "inspect_raster_metadata", label: "Inspect scene", detail: "Metadata + bands" },
+  { tool: "validate_crs", label: "Validate CRS", detail: "Spatial reference" },
+  { tool: "calculate_ndwi", label: "Compute NDWI", detail: "Green + NIR" },
+  { tool: "segment_water", label: "Segment water", detail: "Threshold mask" },
+  { tool: "vectorize_mask", label: "Vectorize", detail: "Raster to polygons" },
+  { tool: "calculate_polygon_area", label: "Measure area", detail: "Projected geometry" },
+  { tool: "locate_features", label: "Locate", detail: "WGS84 features" },
+  { tool: "create_map_overlay", label: "Map overlay", detail: "GeoJSON result" },
+  { tool: "generate_grounded_explanation", label: "Ground answer", detail: "Evidence response" }
+] as const;
+
 type ApiStatus = "checking" | "online" | "offline";
 
 type WorkspaceState = {
@@ -362,6 +374,8 @@ export function SatQueryWorkspace() {
   const queryNoticeIsError = Boolean(queryError);
   const evidence = response?.evidence[0] ?? null;
   const tools = response?.judge_trace.tools_executed ?? [];
+  const executedToolSet = new Set(tools);
+  const showExecutionPipeline = loading || Boolean(response);
   const rows = evidenceRows(response, evidence);
   const thresholdRows = evidence ? formatRecordEntries(evidence.thresholds) : [];
   const artifactRows = evidence ? formatRecordEntries(evidence.artifact_refs) : [];
@@ -677,6 +691,63 @@ export function SatQueryWorkspace() {
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
                 {loading ? "Running analysis" : "Run analysis"}
               </button>
+
+              {showExecutionPipeline ? (
+                <div
+                  className={`execution-pipeline mt-3 ${loading ? "is-running" : "is-complete"}`}
+                  data-testid="execution-pipeline"
+                  aria-live="polite"
+                >
+                  <div className="execution-pipeline-header">
+                    <div>
+                      <div className="metadata-label">
+                        {loading ? "Planned geospatial execution" : "Verified execution trace"}
+                      </div>
+                      <div className="field-note mt-1">
+                        {loading
+                          ? "The server is executing the deterministic workflow. Individual stage timing is not streamed."
+                          : "Completed stages below are confirmed by the backend Judge Mode trace."}
+                      </div>
+                    </div>
+                    <span className={`execution-state-pill ${loading ? "is-running" : "is-complete"}`}>
+                      {loading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                          Executing
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          Verified
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="execution-flow" role="list" aria-label="Geospatial processing stages">
+                    {EXECUTION_PIPELINE.map((step, index) => {
+                      const verified = Boolean(response && executedToolSet.has(step.tool));
+                      return (
+                        <div
+                          key={step.tool}
+                          className="execution-step"
+                          data-state={loading ? "planned" : verified ? "complete" : "unverified"}
+                          role="listitem"
+                        >
+                          <span className="execution-node" aria-hidden="true">
+                            {verified ? <CheckCircle2 className="h-4 w-4" /> : <span>{index + 1}</span>}
+                          </span>
+                          <span className="execution-copy">
+                            <strong>{step.label}</strong>
+                            <small>{step.detail}</small>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
               {queryNotice ? (
                 <div className={`alert mt-3 ${queryNoticeIsError ? "error-alert" : ""}`} role={queryNoticeIsError ? "alert" : "status"}>
                   <div className="flex gap-2">

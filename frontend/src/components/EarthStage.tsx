@@ -119,7 +119,10 @@ function StaticMarker({
   selected: boolean;
   onSelect: (datasetId: string) => void;
 }) {
-  const x = clamp(50 + scene.center.lon / 3.6, 11, 89);
+  // The 2:1 equirectangular texture is shown with background-size: cover
+  // inside a square disc, so the visible crop spans roughly -90..+90 degrees
+  // longitude around the texture centre.
+  const x = clamp(50 + scene.center.lon / 1.8, 6, 94);
   const y = clamp(50 - scene.center.lat / 1.8, 12, 88);
 
   return (

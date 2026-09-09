@@ -179,7 +179,8 @@ export function MapCanvas({
               fillColor: color,
               fillOpacity: isSelected ? Math.min(overlayOpacity + 0.18, 0.72) : overlayOpacity,
               opacity: 0.96,
-              weight: isSelected ? 4 : isLargest && highlightLargest ? 3 : 2
+              weight: isSelected ? 4 : isLargest && highlightLargest ? 3 : 2,
+              className: isLargest && highlightLargest ? "water-polygon-largest" : "water-polygon"
             };
           },
           onEachFeature: (feature, layer) => {
