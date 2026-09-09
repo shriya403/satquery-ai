@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { GeoJSON as LeafletGeoJson, ImageOverlay, LatLngBounds, Map } from "leaflet";
+import type {
+  GeoJSON as LeafletGeoJson,
+  ImageOverlay,
+  LatLngBounds,
+  LeafletMouseEvent,
+  Map,
+  Rectangle
+} from "leaflet";
 import { spectralPreviewUrl } from "../lib/api";
 import type { SpectralMode } from "../lib/api";
-import type { AnalysisResponse, DemoDataset } from "../lib/types";
+import type { AnalysisResponse, AoiBounds, DemoDataset } from "../lib/types";
 
 type MapCanvasProps = {
   dataset: DemoDataset | null;
@@ -16,6 +23,10 @@ type MapCanvasProps = {
   overlayOpacity: number;
   selectedFeatureId: string | null;
   onFeatureSelect: (featureId: string) => void;
+  aoiBounds: AoiBounds | null;
+  aoiDrawing: boolean;
+  onAoiChange: (bounds: AoiBounds | null) => void;
+  onAoiDrawingChange: (drawing: boolean) => void;
 };
 
 export function MapCanvas({
@@ -27,12 +38,18 @@ export function MapCanvas({
   highlightLargest,
   overlayOpacity,
   selectedFeatureId,
-  onFeatureSelect
+  onFeatureSelect,
+  aoiBounds,
+  aoiDrawing,
+  onAoiChange,
+  onAoiDrawingChange
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const imageRef = useRef<ImageOverlay | null>(null);
   const overlayRef = useRef<LeafletGeoJson | null>(null);
+  const aoiRef = useRef<Rectangle | null>(null);
+  const draftAoiRef = useRef<Rectangle | null>(null);
   const boundsRef = useRef<LatLngBounds | null>(null);
   const fittedDatasetIdRef = useRef<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -150,6 +167,160 @@ export function MapCanvas({
   useEffect(() => {
     let cancelled = false;
 
+    async function renderAoi() {
+      if (!mapRef.current) {
+        return;
+      }
+
+      const leaflet = await import("leaflet");
+      if (cancelled || !mapRef.current) {
+        return;
+      }
+
+      if (aoiRef.current) {
+        aoiRef.current.remove();
+        aoiRef.current = null;
+      }
+
+      if (!aoiBounds) {
+        return;
+      }
+
+      const [west, south, east, north] = aoiBounds;
+      aoiRef.current = leaflet
+        .rectangle(
+          leaflet.latLngBounds([south, west], [north, east]),
+          {
+            className: "aoi-rectangle",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.08,
+            interactive: false,
+            dashArray: "7 5"
+          }
+        )
+        .addTo(mapRef.current);
+      aoiRef.current.bringToFront();
+    }
+
+    void renderAoi();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [aoiBounds, mapReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let cleanupHandlers: (() => void) | null = null;
+
+    async function enableAoiDrawing() {
+      if (!aoiDrawing || !mapRef.current) {
+        return;
+      }
+
+      const leaflet = await import("leaflet");
+      if (cancelled || !mapRef.current) {
+        return;
+      }
+
+      const map = mapRef.current;
+      const container = map.getContainer();
+      let startPoint: LeafletMouseEvent["latlng"] | null = null;
+
+      map.dragging.disable();
+      map.boxZoom.disable();
+      container.classList.add("aoi-drawing-active");
+
+      const removeDraft = () => {
+        if (draftAoiRef.current) {
+          draftAoiRef.current.remove();
+          draftAoiRef.current = null;
+        }
+      };
+
+      const handleMouseDown = (event: LeafletMouseEvent) => {
+        startPoint = event.latlng;
+        removeDraft();
+        draftAoiRef.current = leaflet
+          .rectangle(
+            leaflet.latLngBounds(event.latlng, event.latlng),
+            {
+              className: "aoi-rectangle-draft",
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.1,
+              interactive: false,
+              dashArray: "4 4"
+            }
+          )
+          .addTo(map);
+      };
+
+      const handleMouseMove = (event: LeafletMouseEvent) => {
+        if (!startPoint || !draftAoiRef.current) {
+          return;
+        }
+        draftAoiRef.current.setBounds(
+          leaflet.latLngBounds(startPoint, event.latlng)
+        );
+      };
+
+      const handleMouseUp = (event: LeafletMouseEvent) => {
+        if (!startPoint) {
+          return;
+        }
+
+        const bounds = leaflet.latLngBounds(startPoint, event.latlng);
+        startPoint = null;
+        removeDraft();
+
+        const west = bounds.getWest();
+        const south = bounds.getSouth();
+        const east = bounds.getEast();
+        const north = bounds.getNorth();
+
+        if (
+          Math.abs(east - west) > 0.00001 &&
+          Math.abs(north - south) > 0.00001
+        ) {
+          onAoiChange([west, south, east, north]);
+        }
+
+        onAoiDrawingChange(false);
+      };
+
+      map.on("mousedown", handleMouseDown);
+      map.on("mousemove", handleMouseMove);
+      map.on("mouseup", handleMouseUp);
+
+      cleanupHandlers = () => {
+        map.off("mousedown", handleMouseDown);
+        map.off("mousemove", handleMouseMove);
+        map.off("mouseup", handleMouseUp);
+        removeDraft();
+        container.classList.remove("aoi-drawing-active");
+        map.dragging.enable();
+        map.boxZoom.enable();
+      };
+    }
+
+    void enableAoiDrawing();
+
+    return () => {
+      cancelled = true;
+      cleanupHandlers?.();
+    };
+  }, [
+    aoiDrawing,
+    mapReady,
+    onAoiChange,
+    onAoiDrawingChange
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     async function renderOverlay() {
       if (!mapRef.current) {
         return;
@@ -200,6 +371,8 @@ export function MapCanvas({
           }
         })
         .addTo(mapRef.current);
+
+      aoiRef.current?.bringToFront();
     }
 
     renderOverlay();

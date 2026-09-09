@@ -1,3 +1,5 @@
+export type AoiBounds = [number, number, number, number];
+
 export type DemoDataset = {
   dataset_id: string;
   name: string;

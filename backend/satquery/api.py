@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from satquery.analysis.spatial_query import run_query
+from satquery.analysis.spatial_query import InvalidAnalysisOptionError, run_query
 from satquery.config import get_settings
 from satquery.geospatial.raster import DatasetNotFoundError, UnsupportedBandError, get_demo_dataset, list_demo_datasets
 from satquery.query_planner import UnsupportedQueryError
@@ -76,10 +76,16 @@ def dataset_spectral_preview(dataset_id: str, mode: str) -> StreamingResponse:
 @app.post("/api/query", response_model=AnalysisResponse)
 def query(request: QueryRequest) -> AnalysisResponse:
     try:
-        return run_query(question=request.question, dataset_id=request.dataset_id)
+        return run_query(
+            question=request.question,
+            dataset_id=request.dataset_id,
+            analysis_options=request.analysis_options,
+        )
     except DatasetNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except UnsupportedBandError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except UnsupportedQueryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except InvalidAnalysisOptionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

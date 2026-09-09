@@ -68,6 +68,75 @@ def test_query_contract_returns_grounded_response() -> None:
     assert payload["judge_trace"]["tools_executed"]
 
 
+def test_query_with_aoi_constrains_analysis() -> None:
+    datasets = client.get("/api/demo-datasets").json()
+    dataset = next(
+        item for item in datasets
+        if item["dataset_id"] == "synthetic-pune-water-fixture"
+    )
+    west, south, east, north = dataset["bounds_wgs84"]
+    midpoint_lon = (west + east) / 2.0
+
+    question = (
+        "Find water bodies in this image, calculate their approximate area, "
+        "and highlight the largest one."
+    )
+    full_response = client.post(
+        "/api/query",
+        json={
+            "dataset_id": "synthetic-pune-water-fixture",
+            "question": question,
+        },
+    )
+    assert full_response.status_code == 200
+
+    aoi_bbox = [west, south, midpoint_lon, north]
+    aoi_response = client.post(
+        "/api/query",
+        json={
+            "dataset_id": "synthetic-pune-water-fixture",
+            "question": question,
+            "analysis_options": {"aoi_bbox_wgs84": aoi_bbox},
+        },
+    )
+    assert aoi_response.status_code == 200
+
+    full_payload = full_response.json()
+    aoi_payload = aoi_response.json()
+
+    assert aoi_payload["metrics"]["aoi_applied"] is True
+    assert aoi_payload["metrics"]["analysis_scope"] == "selected_aoi"
+    assert aoi_payload["metrics"]["aoi_pixel_count"] > 0
+    assert (
+        aoi_payload["metrics"]["total_water_area_ha"]
+        < full_payload["metrics"]["total_water_area_ha"]
+    )
+    assert aoi_payload["evidence"][0]["coordinates"]["aoi_bbox_wgs84"]
+    assert (
+        aoi_payload["judge_trace"]["generated_plan"]["spatial_constraints"][
+            "aoi_bbox_wgs84"
+        ]
+    )
+
+
+def test_query_rejects_invalid_aoi() -> None:
+    response = client.post(
+        "/api/query",
+        json={
+            "dataset_id": "synthetic-pune-water-fixture",
+            "question": (
+                "Find water bodies in this image, calculate their approximate "
+                "area, and highlight the largest one."
+            ),
+            "analysis_options": {
+                "aoi_bbox_wgs84": [74.0, 19.0, 73.0, 18.0]
+            },
+        },
+    )
+    assert response.status_code == 422
+    assert "west < east" in response.json()["detail"]
+
+
 def test_unsupported_query_returns_422() -> None:
     response = client.post(
         "/api/query",

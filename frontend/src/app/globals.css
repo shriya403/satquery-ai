@@ -1889,3 +1889,169 @@ html[data-theme-ready="true"] .theme-transition {
   }
 }
 
+/* SatQuery interactive AOI analysis */
+.aoi-control {
+  position: absolute;
+  left: 14px;
+  bottom: 38px;
+  z-index: 525;
+  display: grid;
+  width: min(390px, calc(100% - 340px));
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--surface-glass) 95%, transparent);
+  box-shadow: var(--shadow-soft);
+  padding: 10px 11px;
+  backdrop-filter: blur(18px);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.aoi-control.is-drawing {
+  border-color: color-mix(in srgb, var(--accent-primary) 65%, var(--border));
+  box-shadow:
+    var(--shadow-soft),
+    0 0 0 1px color-mix(in srgb, var(--accent-primary) 20%, transparent);
+}
+
+.aoi-control.has-aoi {
+  border-color: color-mix(in srgb, var(--success) 48%, var(--border));
+}
+
+.aoi-control-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.aoi-control-copy strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.aoi-control-copy > span:last-child {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.aoi-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.aoi-button {
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 48%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-primary) 12%, var(--surface));
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.aoi-button:hover:not(:disabled),
+.aoi-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent-primary) 20%, var(--surface));
+}
+
+.aoi-button-secondary {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface-elevated) 82%, transparent);
+  color: var(--text-secondary);
+}
+
+.aoi-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.aoi-button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.aoi-coordinates {
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aoi-rectangle,
+.aoi-rectangle-draft {
+  stroke: var(--accent-primary);
+  vector-effect: non-scaling-stroke;
+}
+
+.aoi-rectangle {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent-primary) 45%, transparent));
+  animation: aoi-lock 520ms ease-out both;
+}
+
+.aoi-rectangle-draft {
+  stroke: var(--warning);
+}
+
+.leaflet-container.aoi-drawing-active,
+.leaflet-container.aoi-drawing-active * {
+  cursor: crosshair !important;
+}
+
+.analysis-scope-banner {
+  display: grid;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--success) 44%, var(--border));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+  padding: 10px 11px;
+}
+
+.analysis-scope-banner strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+@keyframes aoi-lock {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 34;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (max-width: 980px) {
+  .aoi-control {
+    width: min(360px, calc(100% - 28px));
+  }
+}
+
+@media (max-width: 520px) {
+  .aoi-control {
+    right: 10px;
+    bottom: 42px;
+    left: 10px;
+    width: auto;
+  }
+
+  .aoi-control-copy > span:last-child,
+  .aoi-coordinates {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aoi-rectangle {
+    animation: none !important;
+  }
+}
+

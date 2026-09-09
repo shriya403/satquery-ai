@@ -1,4 +1,4 @@
-import type { AnalysisResponse, DemoDataset } from "./types";
+import type { AnalysisResponse, AoiBounds, DemoDataset } from "./types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
@@ -24,7 +24,11 @@ export async function fetchDemoDatasets(): Promise<DemoDataset[]> {
   return response.json();
 }
 
-export async function runAnalysis(question: string, datasetId: string): Promise<AnalysisResponse> {
+export async function runAnalysis(
+  question: string,
+  datasetId: string,
+  aoiBounds: AoiBounds | null = null
+): Promise<AnalysisResponse> {
   const response = await fetch(`${API_BASE}/api/query`, {
     method: "POST",
     headers: {
@@ -32,7 +36,8 @@ export async function runAnalysis(question: string, datasetId: string): Promise<
     },
     body: JSON.stringify({
       question,
-      dataset_id: datasetId
+      dataset_id: datasetId,
+      analysis_options: aoiBounds ? { aoi_bbox_wgs84: aoiBounds } : {}
     })
   });
   if (!response.ok) {

@@ -20,7 +20,13 @@ import {
 import { fetchDemoDatasets, runAnalysis } from "../lib/api";
 import type { SpectralMode } from "../lib/api";
 import { formatDatasetDate, getUnsupportedQueryHint, REAL_DEMO_DATASET_ID, WATER_ANALYSIS_QUERY } from "../lib/satquery";
-import type { AnalysisEvidence, AnalysisResponse, DemoDataset, OverlayFeature } from "../lib/types";
+import type {
+  AnalysisEvidence,
+  AnalysisResponse,
+  AoiBounds,
+  DemoDataset,
+  OverlayFeature
+} from "../lib/types";
 import { MapCanvas } from "./MapCanvas";
 import { ThemeControl } from "./ThemeControl";
 
@@ -263,6 +269,8 @@ export function SatQueryWorkspace() {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [showRaster, setShowRaster] = useState(true);
   const [spectralMode, setSpectralMode] = useState<SpectralMode>("rgb");
+  const [aoiBounds, setAoiBounds] = useState<AoiBounds | null>(null);
+  const [aoiDrawing, setAoiDrawing] = useState(false);
   const [showOverlay, setShowOverlay] = useState(true);
   const [highlightLargest, setHighlightLargest] = useState(true);
   const [overlayOpacity, setOverlayOpacity] = useState(0.28);
@@ -425,8 +433,9 @@ export function SatQueryWorkspace() {
     typeof response?.metrics.ndwi_threshold === "number"
       ? response.metrics.ndwi_threshold
       : 0.2;
+  const analysisScopeLabel = aoiBounds ? "selected AOI" : "full scene";
   const analysisStatusMessage = loading
-    ? `Running request against ${selectedDataset?.name ?? "selected scene"}...`
+    ? `Running ${analysisScopeLabel} request against ${selectedDataset?.name ?? "selected scene"}...`
     : response
       ? `Analysis complete: ${formatMetric(response.metrics.feature_count)} polygon(s), ${formatMetric(response.metrics.total_water_area_ha)} ha total estimated water area.`
       : "Ready for the supported water-body analysis workflow.";
@@ -446,7 +455,11 @@ export function SatQueryWorkspace() {
     setUnavailableSelectionMessage(null);
     setExportMessage(null);
     try {
-      const result = await runAnalysis(question, selectedDataset.dataset_id);
+      const result = await runAnalysis(
+        question,
+        selectedDataset.dataset_id,
+        aoiBounds
+      );
       setApiStatus("online");
       setResponse(result);
       setSelectedFeatureId(result.overlays[0]?.properties.id ?? null);
@@ -563,6 +576,8 @@ export function SatQueryWorkspace() {
                 value={selectedDatasetId}
                 onChange={(event) => {
                   setSelectedDatasetId(event.target.value);
+                  setAoiBounds(null);
+                  setAoiDrawing(false);
                   setResponse(null);
                   setSelectedFeatureId(null);
                   setQueryError(null);
@@ -729,6 +744,52 @@ export function SatQueryWorkspace() {
             </div>
           </div>
 
+          <div
+            className={`aoi-control ${aoiDrawing ? "is-drawing" : ""} ${aoiBounds ? "has-aoi" : ""}`}
+            data-testid="aoi-control"
+          >
+            <div className="aoi-control-copy">
+              <span className="metadata-label">Analysis Scope</span>
+              <strong>{aoiBounds ? "AOI locked" : aoiDrawing ? "Draw on map" : "Full scene"}</strong>
+              <span>
+                {aoiBounds
+                  ? "The next analysis will only count pixels whose centres fall inside this WGS84 rectangle."
+                  : aoiDrawing
+                    ? "Click and drag across the raster to define a rectangular Area of Interest."
+                    : "Draw an AOI to prove spatially constrained analysis."}
+              </span>
+            </div>
+            <div className="aoi-actions">
+              <button
+                type="button"
+                className="aoi-button"
+                aria-pressed={aoiDrawing}
+                onClick={() => setAoiDrawing((current) => !current)}
+              >
+                {aoiDrawing ? "Cancel drawing" : aoiBounds ? "Redraw AOI" : "Draw AOI"}
+              </button>
+              <button
+                type="button"
+                className="aoi-button aoi-button-secondary"
+                disabled={!aoiBounds}
+                onClick={() => {
+                  setAoiBounds(null);
+                  setAoiDrawing(false);
+                  setResponse(null);
+                  setSelectedFeatureId(null);
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            {aoiBounds ? (
+              <div className="aoi-coordinates mono">
+                W {aoiBounds[0].toFixed(5)} · S {aoiBounds[1].toFixed(5)} ·
+                E {aoiBounds[2].toFixed(5)} · N {aoiBounds[3].toFixed(5)}
+              </div>
+            ) : null}
+          </div>
+
           <MapCanvas
             dataset={selectedDataset}
             response={response}
@@ -739,6 +800,16 @@ export function SatQueryWorkspace() {
             overlayOpacity={overlayOpacity}
             selectedFeatureId={selectedFeatureId}
             onFeatureSelect={setSelectedFeatureId}
+            aoiBounds={aoiBounds}
+            aoiDrawing={aoiDrawing}
+            onAoiChange={(bounds) => {
+              setAoiBounds(bounds);
+              setResponse(null);
+              setSelectedFeatureId(null);
+              setQueryError(null);
+              setExportMessage(null);
+            }}
+            onAoiDrawingChange={setAoiDrawing}
           />
         </section>
 
@@ -879,6 +950,16 @@ export function SatQueryWorkspace() {
                   </div>
                   <p className="leading-7 text-[var(--text-secondary)]">{response.concise_answer}</p>
                 </div>
+
+                {response.metrics.aoi_applied ? (
+                  <div className="analysis-scope-banner" data-testid="aoi-result-scope">
+                    <span className="metadata-label">Spatial scope</span>
+                    <strong>Result constrained to selected AOI</strong>
+                    <span className="field-note">
+                      Judge Mode and evidence include the exact WGS84 bounding box used by the backend.
+                    </span>
+                  </div>
+                ) : null}
 
                 <div className="metric-grid">
                   {Object.entries(response.metrics)
