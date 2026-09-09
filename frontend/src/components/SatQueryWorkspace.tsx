@@ -18,6 +18,7 @@ import {
   TimerReset
 } from "lucide-react";
 import { fetchDemoDatasets, runAnalysis } from "../lib/api";
+import type { SpectralMode } from "../lib/api";
 import { formatDatasetDate, getUnsupportedQueryHint, REAL_DEMO_DATASET_ID, WATER_ANALYSIS_QUERY } from "../lib/satquery";
 import type { AnalysisEvidence, AnalysisResponse, DemoDataset, OverlayFeature } from "../lib/types";
 import { MapCanvas } from "./MapCanvas";
@@ -54,6 +55,44 @@ const METRIC_LABELS: Record<string, string> = {
   ndwi_threshold: "NDWI threshold",
   min_component_pixels: "Minimum component pixels"
 };
+
+const SPECTRAL_VIEWS: Array<{
+  id: SpectralMode;
+  label: string;
+  kicker: string;
+  description: string;
+}> = [
+  {
+    id: "rgb",
+    label: "RGB",
+    kicker: "True-colour context",
+    description: "Contrast-stretched red, green and blue reflectance for visual scene context."
+  },
+  {
+    id: "green",
+    label: "Green",
+    kicker: "Input band",
+    description: "Contrast-stretched Green reflectance. Sentinel-2 Band 03 in the real Khadakwasla scene."
+  },
+  {
+    id: "nir",
+    label: "NIR",
+    kicker: "Input band",
+    description: "Contrast-stretched near-infrared reflectance. Sentinel-2 Band 08 in the real Khadakwasla scene."
+  },
+  {
+    id: "ndwi",
+    label: "NDWI",
+    kicker: "Computed spectral index",
+    description: "False-colour visualization of NDWI = (Green - NIR) / (Green + NIR). The numeric array is unchanged."
+  },
+  {
+    id: "water-mask",
+    label: "Water Mask",
+    kicker: "Decision layer",
+    description: "Binary water mask produced by the same NDWI thresholding used by the verified analysis workflow."
+  }
+];
 
 const EXECUTION_PIPELINE = [
   { tool: "inspect_raster_metadata", label: "Inspect scene", detail: "Metadata + bands" },
@@ -223,6 +262,7 @@ export function SatQueryWorkspace() {
   const [unavailableSelectionMessage, setUnavailableSelectionMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [showRaster, setShowRaster] = useState(true);
+  const [spectralMode, setSpectralMode] = useState<SpectralMode>("rgb");
   const [showOverlay, setShowOverlay] = useState(true);
   const [highlightLargest, setHighlightLargest] = useState(true);
   const [overlayOpacity, setOverlayOpacity] = useState(0.28);
@@ -379,6 +419,12 @@ export function SatQueryWorkspace() {
   const rows = evidenceRows(response, evidence);
   const thresholdRows = evidence ? formatRecordEntries(evidence.thresholds) : [];
   const artifactRows = evidence ? formatRecordEntries(evidence.artifact_refs) : [];
+  const activeSpectralView =
+    SPECTRAL_VIEWS.find((view) => view.id === spectralMode) ?? SPECTRAL_VIEWS[0];
+  const activeNdwiThreshold =
+    typeof response?.metrics.ndwi_threshold === "number"
+      ? response.metrics.ndwi_threshold
+      : 0.2;
   const analysisStatusMessage = loading
     ? `Running request against ${selectedDataset?.name ?? "selected scene"}...`
     : response
@@ -646,10 +692,48 @@ export function SatQueryWorkspace() {
           <div className="map-dataset-badge">
             <span className="mono">{selectedDataset?.dataset_id ?? "No dataset loaded"}</span>
           </div>
+
+          <div className="spectral-control" data-testid="spectral-control">
+            <div className="spectral-control-heading">
+              <div>
+                <div className="metadata-label">Spectral Explainability</div>
+                <div className="spectral-active-copy">
+                  <strong>{activeSpectralView.kicker}</strong>
+                  <span>{activeSpectralView.description}</span>
+                </div>
+              </div>
+              {(spectralMode === "ndwi" || spectralMode === "water-mask") ? (
+                <span className="spectral-equation mono">
+                  NDWI = (G - NIR) / (G + NIR)
+                  {spectralMode === "water-mask" ? ` · water >= ${formatMetric(activeNdwiThreshold)}` : ""}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="spectral-tabs" role="tablist" aria-label="Spectral visualization mode">
+              {SPECTRAL_VIEWS.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  className="spectral-tab"
+                  role="tab"
+                  aria-selected={spectralMode === view.id}
+                  onClick={() => {
+                    setSpectralMode(view.id);
+                    setShowRaster(true);
+                  }}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <MapCanvas
             dataset={selectedDataset}
             response={response}
             showRaster={showRaster}
+            rasterMode={spectralMode}
             showOverlay={showOverlay}
             highlightLargest={highlightLargest}
             overlayOpacity={overlayOpacity}

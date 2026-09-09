@@ -32,6 +32,24 @@ def test_preview_endpoint_returns_png() -> None:
     assert response.content.startswith(b"\x89PNG")
 
 
+def test_spectral_preview_endpoints_return_png() -> None:
+    for mode in ("rgb", "green", "nir", "ndwi", "water-mask"):
+        response = client.get(
+            f"/api/demo-datasets/synthetic-pune-water-fixture/spectral/{mode}.png"
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG")
+
+
+def test_spectral_preview_rejects_unknown_mode() -> None:
+    response = client.get(
+        "/api/demo-datasets/synthetic-pune-water-fixture/spectral/not-a-mode.png"
+    )
+    assert response.status_code == 400
+    assert "Supported modes" in response.json()["detail"]
+
+
 def test_query_contract_returns_grounded_response() -> None:
     response = client.post(
         "/api/query",

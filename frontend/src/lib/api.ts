@@ -3,6 +3,8 @@ import type { AnalysisResponse, DemoDataset } from "./types";
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 
+export type SpectralMode = "rgb" | "green" | "nir" | "ndwi" | "water-mask";
+
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { detail?: string };
@@ -41,4 +43,8 @@ export async function runAnalysis(question: string, datasetId: string): Promise<
 
 export function previewUrl(datasetId: string): string {
   return `${API_BASE}/api/demo-datasets/${encodeURIComponent(datasetId)}/preview.png`;
+}
+
+export function spectralPreviewUrl(datasetId: string, mode: SpectralMode): string {
+  return `${API_BASE}/api/demo-datasets/${encodeURIComponent(datasetId)}/spectral/${encodeURIComponent(mode)}.png`;
 }

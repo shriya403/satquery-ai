@@ -11,7 +11,7 @@ from satquery.config import get_settings
 from satquery.geospatial.raster import DatasetNotFoundError, UnsupportedBandError, get_demo_dataset, list_demo_datasets
 from satquery.query_planner import UnsupportedQueryError
 from satquery.schemas import AnalysisResponse, DemoDatasetSummary, QueryRequest
-from satquery.visualization.preview import render_preview_png
+from satquery.visualization.preview import render_preview_png, render_spectral_preview_png
 
 settings = get_settings()
 
@@ -55,6 +55,20 @@ def dataset_preview(dataset_id: str) -> StreamingResponse:
         preview = render_preview_png(get_demo_dataset(dataset_id))
     except DatasetNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return StreamingResponse(BytesIO(preview), media_type="image/png")
+
+
+@app.get("/api/demo-datasets/{dataset_id}/spectral/{mode}.png")
+def dataset_spectral_preview(dataset_id: str, mode: str) -> StreamingResponse:
+    try:
+        preview = render_spectral_preview_png(get_demo_dataset(dataset_id), mode)
+    except DatasetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except UnsupportedBandError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return StreamingResponse(BytesIO(preview), media_type="image/png")
 

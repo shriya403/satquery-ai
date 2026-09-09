@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { GeoJSON as LeafletGeoJson, ImageOverlay, LatLngBounds, Map } from "leaflet";
-import { previewUrl } from "../lib/api";
+import { spectralPreviewUrl } from "../lib/api";
+import type { SpectralMode } from "../lib/api";
 import type { AnalysisResponse, DemoDataset } from "../lib/types";
 
 type MapCanvasProps = {
   dataset: DemoDataset | null;
   response: AnalysisResponse | null;
   showRaster: boolean;
+  rasterMode: SpectralMode;
   showOverlay: boolean;
   highlightLargest: boolean;
   overlayOpacity: number;
@@ -20,6 +22,7 @@ export function MapCanvas({
   dataset,
   response,
   showRaster,
+  rasterMode,
   showOverlay,
   highlightLargest,
   overlayOpacity,
@@ -128,10 +131,11 @@ export function MapCanvas({
       boundsRef.current = bounds;
 
       imageRef.current = leaflet
-        .imageOverlay(previewUrl(dataset.dataset_id), bounds, {
+        .imageOverlay(spectralPreviewUrl(dataset.dataset_id, rasterMode), bounds, {
           opacity: 0.92,
           interactive: false,
-          alt: `${dataset.name} preview`
+          alt: `${dataset.name} ${rasterMode} spectral visualization`,
+          className: "spectral-raster-layer"
         })
         .addTo(mapRef.current);
     }
@@ -141,7 +145,7 @@ export function MapCanvas({
     return () => {
       cancelled = true;
     };
-  }, [dataset, showRaster, mapReady]);
+  }, [dataset, showRaster, rasterMode, mapReady]);
 
   useEffect(() => {
     let cancelled = false;
