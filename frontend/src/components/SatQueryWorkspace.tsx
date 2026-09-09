@@ -9,13 +9,16 @@ import {
   CheckCircle2,
   Database,
   Download,
+  Eye,
+  GitBranch,
   Layers,
   Loader2,
   Play,
   Radar,
   Satellite,
   ShieldCheck,
-  TimerReset
+  TimerReset,
+  X
 } from "lucide-react";
 import { fetchDemoDatasets, runAnalysis } from "../lib/api";
 import type { SpectralMode } from "../lib/api";
@@ -278,6 +281,7 @@ export function SatQueryWorkspace() {
   const [workspaceStateReady, setWorkspaceStateReady] = useState(false);
   const [urlDatasetParam, setUrlDatasetParam] = useState<string | null>(null);
   const [parameterNotice, setParameterNotice] = useState<string | null>(null);
+  const [judgeModeExpanded, setJudgeModeExpanded] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -412,6 +416,27 @@ export function SatQueryWorkspace() {
     }
   }, [datasets, selectedDatasetId, urlDatasetParam]);
 
+  useEffect(() => {
+    if (!judgeModeExpanded) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleJudgeModeKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setJudgeModeExpanded(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleJudgeModeKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleJudgeModeKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [judgeModeExpanded]);
+
   const selectedDataset = useMemo(
     () => datasets.find((dataset) => dataset.dataset_id === selectedDatasetId) ?? null,
     [datasets, selectedDatasetId]
@@ -425,6 +450,61 @@ export function SatQueryWorkspace() {
   const executedToolSet = new Set(tools);
   const showExecutionPipeline = loading || Boolean(response);
   const rows = evidenceRows(response, evidence);
+  const judgeScope =
+    response?.metrics.analysis_scope === "selected_aoi"
+      ? "Selected AOI"
+      : "Full scene";
+  const externalModelUsed =
+    response?.provenance_ledger.external_model_used === true;
+  const judgeAuditCards = response
+    ? [
+        {
+          label: "Dataset",
+          value: selectedDataset?.name ?? response.dataset_id,
+          detail: selectedDataset?.provider ?? "Registered scene"
+        },
+        {
+          label: "Analysis scope",
+          value: judgeScope,
+          detail:
+            response.metrics.aoi_applied === true
+              ? "WGS84 AOI applied before vectorization"
+              : "Entire registered scene"
+        },
+        {
+          label: "Bands used",
+          value: evidence?.bands_used.join(" + ") ?? "Not reported",
+          detail: "Reported by analysis evidence"
+        },
+        {
+          label: "NDWI threshold",
+          value: formatMetric(response.metrics.ndwi_threshold),
+          detail: "Decision parameter returned by backend"
+        },
+        {
+          label: "Measured result",
+          value: `${formatMetric(response.metrics.total_water_area_ha)} ha`,
+          detail: `${formatMetric(response.metrics.feature_count)} polygon(s)`
+        },
+        {
+          label: "External model",
+          value: externalModelUsed ? "Used" : "Not used",
+          detail: externalModelUsed
+            ? "See provenance ledger for model context"
+            : "Validated water path is deterministic"
+        },
+        {
+          label: "Evidence",
+          value: `${response.evidence.length} record(s)`,
+          detail: `${response.overlays.length} GeoJSON overlay(s)`
+        },
+        {
+          label: "Backend latency",
+          value: `${formatMetric(response.judge_trace.total_latency_ms ?? "n/a")} ms`,
+          detail: "End-to-end backend query timing"
+        }
+      ]
+    : [];
   const thresholdRows = evidence ? formatRecordEntries(evidence.thresholds) : [];
   const artifactRows = evidence ? formatRecordEntries(evidence.artifact_refs) : [];
   const activeSpectralView =
@@ -1044,11 +1124,23 @@ export function SatQueryWorkspace() {
                 <Braces className="h-4 w-4" aria-hidden="true" />
                 Judge Mode Trace
               </div>
-              <span className="field-note">
-                {response?.judge_trace.total_latency_ms
-                  ? `${response.judge_trace.total_latency_ms} ms backend latency`
-                  : "Run a query to populate the trace"}
-              </span>
+              <div className="judge-trace-actions">
+                <span className="field-note">
+                  {response?.judge_trace.total_latency_ms
+                    ? `${response.judge_trace.total_latency_ms} ms backend latency`
+                    : "Run a query to populate the trace"}
+                </span>
+                <button
+                  type="button"
+                  className="judge-open-button"
+                  disabled={!response}
+                  onClick={() => setJudgeModeExpanded(true)}
+                  data-testid="open-judge-mode"
+                >
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                  Open Judge Mode
+                </button>
+              </div>
             </div>
             <div className="trace-grid mt-3">
               <div className="result-card">
@@ -1092,6 +1184,232 @@ export function SatQueryWorkspace() {
           </div>
         </section>
       </div>
+
+      {judgeModeExpanded && response ? (
+        <div
+          className="judge-mode-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setJudgeModeExpanded(false);
+            }
+          }}
+        >
+          <section
+            className="judge-mode-expanded"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="judge-mode-title"
+            data-testid="judge-mode-expanded"
+          >
+            <header className="judge-mode-hero">
+              <div className="judge-mode-hero-copy">
+                <div className="judge-mode-kicker">
+                  <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                  AUDITABLE GEOSPATIAL EXECUTION
+                </div>
+                <h2 id="judge-mode-title">Open the black box.</h2>
+                <p>
+                  Every verified stage below is populated from the completed SatQuery backend response.
+                  This audit view explains how the answer was produced; it does not claim independent
+                  ground-truth validation.
+                </p>
+              </div>
+              <div className="judge-mode-hero-actions">
+                <span className="judge-verified-pill">
+                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                  Response trace loaded
+                </span>
+                <button
+                  type="button"
+                  className="judge-close-button"
+                  onClick={() => setJudgeModeExpanded(false)}
+                  aria-label="Close Judge Mode"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+            </header>
+
+            <div className="judge-mode-body">
+              <section className="judge-audit-grid" aria-label="Analysis audit summary">
+                {judgeAuditCards.map((card) => (
+                  <article key={card.label} className="judge-audit-card">
+                    <div className="metadata-label">{card.label}</div>
+                    <strong>{card.value}</strong>
+                    <span>{card.detail}</span>
+                  </article>
+                ))}
+              </section>
+
+              <section className="judge-section">
+                <div className="judge-section-heading">
+                  <div>
+                    <div className="judge-section-kicker">
+                      <GitBranch className="h-4 w-4" aria-hidden="true" />
+                      Provenance chain
+                    </div>
+                    <h3>Question → tools → measurable geospatial answer</h3>
+                  </div>
+                  <span className="field-note">
+                    Green checks = confirmed in <span className="mono">tools_executed</span>
+                  </span>
+                </div>
+
+                <div className="judge-provenance-chain">
+                  <div className="judge-chain-node is-source">
+                    <span className="judge-chain-index">00</span>
+                    <div>
+                      <strong>Registered dataset</strong>
+                      <small>{selectedDataset?.dataset_id ?? response.dataset_id}</small>
+                    </div>
+                  </div>
+
+                  {EXECUTION_PIPELINE.map((step, index) => {
+                    const verified = executedToolSet.has(step.tool);
+                    return (
+                      <div
+                        key={step.tool}
+                        className={`judge-chain-node ${verified ? "is-verified" : "is-unverified"}`}
+                      >
+                        <span className="judge-chain-index">
+                          {verified ? (
+                            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            String(index + 1).padStart(2, "0")
+                          )}
+                        </span>
+                        <div>
+                          <strong>{step.label}</strong>
+                          <small>{step.tool}</small>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div className="judge-chain-node is-result">
+                    <span className="judge-chain-index">
+                      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <strong>Grounded result</strong>
+                      <small>
+                        {formatMetric(response.metrics.total_water_area_ha)} ha ·{" "}
+                        {formatMetric(response.metrics.feature_count)} polygon(s)
+                      </small>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div className="judge-mode-columns">
+                <section className="judge-section">
+                  <div className="judge-section-heading">
+                    <div>
+                      <div className="judge-section-kicker">
+                        <Braces className="h-4 w-4" aria-hidden="true" />
+                        Generated plan
+                      </div>
+                      <h3>What SatQuery decided to execute</h3>
+                    </div>
+                  </div>
+                  <pre className="judge-code-block">
+                    {JSON.stringify(response.judge_trace.generated_plan, null, 2)}
+                  </pre>
+                </section>
+
+                <section className="judge-section">
+                  <div className="judge-section-heading">
+                    <div>
+                      <div className="judge-section-kicker">
+                        <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                        Trust boundary
+                      </div>
+                      <h3>What this result does—and does not—claim</h3>
+                    </div>
+                  </div>
+
+                  <div className="judge-trust-grid">
+                    <div className="judge-trust-item">
+                      <span>Result type</span>
+                      <strong>Tool-computed geospatial measurement</strong>
+                    </div>
+                    <div className="judge-trust-item">
+                      <span>Confidence</span>
+                      <strong>
+                        {Math.round(response.confidence * 100)}% heuristic · uncalibrated
+                      </strong>
+                    </div>
+                    <div className="judge-trust-item">
+                      <span>External LLM/VLM in validated path</span>
+                      <strong>{externalModelUsed ? "Yes" : "No"}</strong>
+                    </div>
+                    <div className="judge-trust-item">
+                      <span>Independent ground truth</span>
+                      <strong>Not evaluated in this milestone</strong>
+                    </div>
+                  </div>
+
+                  {evidence?.limitations.length ? (
+                    <div className="judge-limitations">
+                      <div className="metadata-label">
+                        Explicit limitations ({evidence.limitations.length})
+                      </div>
+                      {evidence.limitations.map((limitation) => (
+                        <p key={limitation}>{limitation}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              </div>
+
+              <section className="judge-section">
+                <div className="judge-section-heading">
+                  <div>
+                    <div className="judge-section-kicker">
+                      <Database className="h-4 w-4" aria-hidden="true" />
+                      Evidence matrix
+                    </div>
+                    <h3>Claim → method → measured state</h3>
+                  </div>
+                </div>
+
+                <div className="judge-evidence-table-wrap">
+                  <table className="evidence-table judge-evidence-table">
+                    <thead>
+                      <tr>
+                        <th>Claim</th>
+                        <th>Source</th>
+                        <th>Method</th>
+                        <th>Artifact</th>
+                        <th>State</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr key={row.claim}>
+                          <td>{row.claim}</td>
+                          <td>{row.source}</td>
+                          <td>{row.method}</td>
+                          <td className="mono">{row.artifact}</td>
+                          <td>{row.state}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <details className="judge-raw-ledger">
+                <summary>Raw provenance ledger</summary>
+                <pre className="judge-code-block mt-3">
+                  {JSON.stringify(response.provenance_ledger, null, 2)}
+                </pre>
+              </details>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
