@@ -31,7 +31,8 @@ full-geo = [
 vqa = [
   "torch>=2.4",
   "transformers>=4.45,<5.0",
-  "accelerate>=1.0,<2.0"
+  "accelerate>=1.0,<2.0",
+  "bitsandbytes>=0.48"
 ]
 
 [tool.setuptools.packages.find]

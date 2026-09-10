@@ -39,7 +39,11 @@ def _dependency_available(name: str) -> bool:
 
 
 def vqa_dependencies_available() -> bool:
-    return _dependency_available("torch") and _dependency_available("transformers")
+    return (
+        _dependency_available("torch")
+        and _dependency_available("transformers")
+        and _dependency_available("bitsandbytes")
+    )
 
 
 def _resolve_device(torch_module: Any, requested: str) -> str:
@@ -62,40 +66,81 @@ def _resolve_device(torch_module: Any, requested: str) -> str:
 @lru_cache(maxsize=1)
 def load_vqa_runtime() -> LoadedVqaRuntime:
     settings = get_settings()
+
     if not settings.vqa_enabled:
         raise VqaRuntimeUnavailableError(
-            "Remote-sensing VQA is disabled. Set SATQUERY_VQA_ENABLED=1 before starting the backend."
+            "Remote-sensing VQA is disabled. Set SATQUERY_VQA_ENABLED=1 "
+            "before starting the backend."
         )
+
     if not vqa_dependencies_available():
         raise VqaRuntimeUnavailableError(
-            "Remote-sensing VQA dependencies are missing. Install the optional VQA dependencies first."
+            "Remote-sensing VQA dependencies are missing. "
+            "Install torch, transformers, accelerate and bitsandbytes first."
         )
 
     import torch
-    from transformers import AutoProcessor, Qwen2VLForConditionalGeneration
+    from transformers import (
+        AutoProcessor,
+        BitsAndBytesConfig,
+        Qwen2VLForConditionalGeneration,
+    )
 
     device = _resolve_device(torch, settings.vqa_device)
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    dtype_name = str(dtype).replace("torch.", "")
 
-    processor = AutoProcessor.from_pretrained(
-        settings.vqa_model_id,
-        trust_remote_code=False,
-    )
-    model = Qwen2VLForConditionalGeneration.from_pretrained(
-        settings.vqa_model_id,
-        torch_dtype=dtype,
-        low_cpu_mem_usage=True,
-        trust_remote_code=False,
-    )
-    model.to(device)
+    if device == "cuda":
+        compute_dtype = torch.float16
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=compute_dtype,
+        )
+
+        processor = AutoProcessor.from_pretrained(
+            settings.vqa_model_id,
+            min_pixels=64 * 28 * 28,
+            max_pixels=256 * 28 * 28,
+            trust_remote_code=False,
+        )
+
+        model = Qwen2VLForConditionalGeneration.from_pretrained(
+            settings.vqa_model_id,
+            quantization_config=quantization_config,
+            torch_dtype=compute_dtype,
+            device_map={"": 0},
+            low_cpu_mem_usage=True,
+            trust_remote_code=False,
+        )
+
+        runtime_device = "cuda:0"
+        dtype_name = "nf4 / float16 compute"
+    else:
+        processor = AutoProcessor.from_pretrained(
+            settings.vqa_model_id,
+            min_pixels=64 * 28 * 28,
+            max_pixels=128 * 28 * 28,
+            trust_remote_code=False,
+        )
+
+        model = Qwen2VLForConditionalGeneration.from_pretrained(
+            settings.vqa_model_id,
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True,
+            trust_remote_code=False,
+        )
+        model.to("cpu")
+
+        runtime_device = "cpu"
+        dtype_name = "float32"
+
     model.eval()
 
     return LoadedVqaRuntime(
         model=model,
         processor=processor,
         torch=torch,
-        device=device,
+        device=runtime_device,
         dtype_name=dtype_name,
     )
 
@@ -111,13 +156,16 @@ def vqa_status() -> VqaStatusResponse:
             "after installing model dependencies."
         )
     elif not dependencies:
-        note = "VQA is enabled but optional model dependencies are not installed."
+        note = (
+            "VQA is enabled but torch/transformers/accelerate/bitsandbytes "
+            "runtime dependencies are incomplete."
+        )
     elif loaded:
         note = "Remote-sensing VQA runtime is loaded and ready."
     else:
         note = (
-            "Dependencies are available. The model will load/download lazily "
-            "on the first VQA request."
+            "Dependencies are available. The remote-sensing model will "
+            "load/download lazily on the first VQA request; CUDA uses NF4 4-bit."
         )
 
     return VqaStatusResponse(
@@ -160,37 +208,51 @@ def run_remote_sensing_vqa(dataset_id: str, question: str) -> VqaResponse:
     ]
 
     started = perf_counter()
+
     chat_text = runtime.processor.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True,
     )
+
     inputs = runtime.processor(
         text=[chat_text],
         images=[image],
         padding=True,
         return_tensors="pt",
     )
+
     inputs = {
         key: value.to(runtime.device) if hasattr(value, "to") else value
         for key, value in inputs.items()
     }
 
-    with runtime.torch.inference_mode():
-        generated_ids = runtime.model.generate(
-            **inputs,
-            max_new_tokens=settings.vqa_max_new_tokens,
-            do_sample=False,
-            use_cache=True,
-        )
+    try:
+        with runtime.torch.inference_mode():
+            generated_ids = runtime.model.generate(
+                **inputs,
+                max_new_tokens=settings.vqa_max_new_tokens,
+                do_sample=False,
+                use_cache=True,
+            )
+    except runtime.torch.OutOfMemoryError as exc:
+        if runtime.torch.cuda.is_available():
+            runtime.torch.cuda.empty_cache()
+        raise VqaRuntimeUnavailableError(
+            "CUDA ran out of memory during VQA inference. Close other GPU "
+            "applications and retry. SatQuery is already using NF4 4-bit "
+            "quantization and a restricted visual-token budget."
+        ) from exc
 
     input_length = inputs["input_ids"].shape[1]
     generated_only = generated_ids[:, input_length:]
+
     answer = runtime.processor.batch_decode(
         generated_only,
         skip_special_tokens=True,
         clean_up_tokenization_spaces=False,
     )[0].strip()
+
     elapsed_ms = round((perf_counter() - started) * 1000.0, 2)
 
     return VqaResponse(
@@ -209,8 +271,8 @@ def run_remote_sensing_vqa(dataset_id: str, question: str) -> VqaResponse:
         max_new_tokens=settings.vqa_max_new_tokens,
         confidence=None,
         confidence_note=(
-            "No calibrated VQA confidence is reported. This is a semantic model output, "
-            "not a quantitative geospatial measurement."
+            "No calibrated VQA confidence is reported. This is a semantic model "
+            "output, not a quantitative geospatial measurement."
         ),
         provenance={
             "dataset_id": raster.dataset_id,
@@ -222,6 +284,16 @@ def run_remote_sensing_vqa(dataset_id: str, question: str) -> VqaResponse:
             "preview_rendering": "RGB contrast-stretched registered raster preview",
             "deterministic_generation": True,
             "external_model_used": True,
+            "quantization": (
+                "bitsandbytes NF4 4-bit with double quantization"
+                if runtime.device.startswith("cuda")
+                else "none; CPU float32 fallback"
+            ),
+            "visual_token_budget": (
+                "64-256 visual tokens"
+                if runtime.device.startswith("cuda")
+                else "64-128 visual tokens"
+            ),
         },
         limitations=[
             "The VQA specialist reasons over the rendered RGB preview, not the full multispectral tensor.",

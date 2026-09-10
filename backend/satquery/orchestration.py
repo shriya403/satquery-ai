@@ -14,6 +14,7 @@ from satquery.schemas import (
     SpecialistSelection,
     SpecialistState,
 )
+from satquery.vqa import vqa_status
 
 
 OPTICAL_BANDS = {
@@ -91,14 +92,36 @@ SPECIALIST_REGISTRY: tuple[SpecialistDefinition, ...] = (
 )
 
 
+def _vqa_runtime_ready() -> bool:
+    status = vqa_status()
+    return status.enabled and status.dependencies_available
+
+
+def _effective_specialist_state(
+    item: SpecialistDefinition,
+) -> SpecialistState:
+    if item.specialist_id == "rs_vqa_specialist" and _vqa_runtime_ready():
+        return SpecialistState.ready
+    return item.state
+
+
+def _effective_specialist_note(item: SpecialistDefinition) -> str:
+    if item.specialist_id == "rs_vqa_specialist" and _vqa_runtime_ready():
+        return (
+            "Implemented with AdaptLLM/remote-sensing-Qwen2-VL-2B-Instruct; "
+            "CUDA runtime uses bitsandbytes NF4 4-bit quantization."
+        )
+    return item.implementation_note
+
+
 def registry_payload() -> list[dict[str, Any]]:
     return [
         {
             "specialist_id": item.specialist_id,
             "label": item.label,
-            "state": item.state.value,
+            "state": _effective_specialist_state(item).value,
             "capabilities": list(item.capabilities),
-            "implementation_note": item.implementation_note,
+            "implementation_note": _effective_specialist_note(item),
         }
         for item in SPECIALIST_REGISTRY
     ]
@@ -263,7 +286,12 @@ def _selected_tools(task: OrchestrationTask) -> list[str]:
             "generate_grounded_explanation",
         ]
     return [
-        "inspect_raster_metadata", "remote_sensing_vqa_model [planned]",
+        "inspect_raster_metadata",
+        (
+            "remote_sensing_vqa_model"
+            if _vqa_runtime_ready()
+            else "remote_sensing_vqa_model [runtime disabled]"
+        ),
         "generate_grounded_explanation",
     ]
 
@@ -390,7 +418,16 @@ def _compatibility_report(
         )
 
     if task == OrchestrationTask.single_image_vqa:
-        warnings.append("Remote-sensing VQA specialist is not implemented yet; the controller only exposes the intended route.")
+        if _vqa_runtime_ready():
+            warnings.append(
+                "Remote-sensing VQA is a model-generated semantic interpretation; "
+                "quantitative measurements still require deterministic geospatial tools."
+            )
+        else:
+            warnings.append(
+                "Remote-sensing VQA implementation is installed but its runtime "
+                "is not enabled/available yet."
+            )
     elif task == OrchestrationTask.text_guided_grounding:
         warnings.append("General text-guided grounding specialist is not implemented yet; existing water polygons are task-specific.")
     elif task == OrchestrationTask.temporal_change:
@@ -416,9 +453,9 @@ def build_orchestration_plan(request: OrchestrationRequest) -> OrchestrationPlan
         SpecialistSelection(
             specialist_id=item.specialist_id,
             label=item.label,
-            state=item.state,
+            state=_effective_specialist_state(item),
             capabilities=list(item.capabilities),
-            implementation_note=item.implementation_note,
+            implementation_note=_effective_specialist_note(item),
         )
         for item in (_registry_item(specialist_id) for specialist_id in specialist_ids)
     ]

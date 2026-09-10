@@ -260,3 +260,30 @@ def test_water_analysis_remains_available_with_vqa_disabled() -> None:
     )
     assert response.status_code == 200
     assert response.json()["metrics"]["total_water_area_ha"] > 0
+
+
+def test_vqa_registry_stays_planned_when_runtime_disabled() -> None:
+    response = client.get("/api/orchestration/registry")
+    assert response.status_code == 200
+    item = next(
+        specialist
+        for specialist in response.json()["specialists"]
+        if specialist["specialist_id"] == "rs_vqa_specialist"
+    )
+    assert item["state"] == "planned"
+
+
+def test_vqa_orchestration_route_discloses_disabled_runtime() -> None:
+    response = client.post(
+        "/api/orchestration/plan",
+        json={
+            "question": "Describe the land cover and major objects visible in this image.",
+            "dataset_ids": ["synthetic-pune-water-fixture"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"] == "single_image_vqa"
+    assert payload["executable"] is False
+    assert "runtime disabled" in " ".join(payload["selected_tools"]).lower()
+
