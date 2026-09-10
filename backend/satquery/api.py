@@ -9,8 +9,15 @@ from fastapi.responses import StreamingResponse
 from satquery.analysis.spatial_query import InvalidAnalysisOptionError, run_query
 from satquery.config import get_settings
 from satquery.geospatial.raster import DatasetNotFoundError, UnsupportedBandError, get_demo_dataset, list_demo_datasets
+from satquery.orchestration import build_orchestration_plan, registry_payload
 from satquery.query_planner import UnsupportedQueryError
-from satquery.schemas import AnalysisResponse, DemoDatasetSummary, QueryRequest
+from satquery.schemas import (
+    AnalysisResponse,
+    DemoDatasetSummary,
+    OrchestrationPlanResponse,
+    OrchestrationRequest,
+    QueryRequest,
+)
 from satquery.visualization.preview import render_preview_png, render_spectral_preview_png
 
 settings = get_settings()
@@ -71,6 +78,22 @@ def dataset_spectral_preview(dataset_id: str, mode: str) -> StreamingResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return StreamingResponse(BytesIO(preview), media_type="image/png")
+
+
+@app.get("/api/orchestration/registry")
+def orchestration_registry() -> dict[str, object]:
+    return {
+        "registry_version": "satquery-specialists-v1",
+        "specialists": registry_payload(),
+    }
+
+
+@app.post("/api/orchestration/plan", response_model=OrchestrationPlanResponse)
+def orchestration_plan(request: OrchestrationRequest) -> OrchestrationPlanResponse:
+    try:
+        return build_orchestration_plan(request)
+    except DatasetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/query", response_model=AnalysisResponse)

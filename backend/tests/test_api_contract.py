@@ -144,3 +144,84 @@ def test_unsupported_query_returns_422() -> None:
     )
 
     assert response.status_code == 422
+
+def test_orchestration_registry_discloses_ready_and_planned_specialists() -> None:
+    response = client.get("/api/orchestration/registry")
+    assert response.status_code == 200
+    payload = response.json()
+    states = {item["specialist_id"]: item["state"] for item in payload["specialists"]}
+    assert states["water_ndwi_specialist"] == "ready"
+    assert states["rs_vqa_specialist"] == "planned"
+    assert states["temporal_change_specialist"] == "planned"
+    assert states["optical_sar_fusion_specialist"] == "planned"
+
+
+def test_orchestration_routes_verified_water_measurement() -> None:
+    response = client.post(
+        "/api/orchestration/plan",
+        json={
+            "question": "Find water bodies in this image, calculate their approximate area, and highlight the largest one.",
+            "dataset_ids": ["synthetic-pune-water-fixture"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"] == "geospatial_measurement"
+    assert payload["inputs"][0]["modality"] == "optical_multispectral"
+    assert payload["compatibility"]["compatible"] is True
+    assert payload["executable"] is True
+    assert "calculate_ndwi" in payload["selected_tools"]
+    assert payload["internal_reasoning_exposed"] is False
+
+
+def test_orchestration_routes_single_image_vqa_without_faking_execution() -> None:
+    response = client.post(
+        "/api/orchestration/plan",
+        json={
+            "question": "Describe the land cover and major objects visible in this image.",
+            "dataset_ids": ["synthetic-pune-water-fixture"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"] == "single_image_vqa"
+    assert payload["required_input_count"] == 1
+    assert payload["executable"] is False
+    selected = {item["specialist_id"]: item["state"] for item in payload["selected_specialists"]}
+    assert selected["rs_vqa_specialist"] == "planned"
+
+
+def test_orchestration_temporal_route_requires_two_inputs() -> None:
+    response = client.post(
+        "/api/orchestration/plan",
+        json={
+            "question": "What changed between these two dates and where did the change occur?",
+            "dataset_ids": ["synthetic-pune-water-fixture"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"] == "temporal_change"
+    assert payload["required_input_count"] == 2
+    assert payload["compatibility"]["compatible"] is False
+    assert payload["executable"] is False
+    assert any("requires exactly 2" in reason for reason in payload["compatibility"]["blocking_reasons"])
+
+
+def test_orchestration_optical_sar_route_requires_modalities() -> None:
+    response = client.post(
+        "/api/orchestration/plan",
+        json={
+            "question": "Use optical and SAR images together to identify water-covered regions.",
+            "dataset_ids": ["synthetic-pune-water-fixture", "synthetic-pune-water-fixture"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"] == "optical_sar_fusion"
+    assert payload["executable"] is False
+    assert any(
+        "one optical/multispectral input and one SAR input" in reason
+        for reason in payload["compatibility"]["blocking_reasons"]
+    )
+

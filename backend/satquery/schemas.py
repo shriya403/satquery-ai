@@ -12,6 +12,75 @@ class Intent(str, Enum):
     fusion_classification = "fusion_classification"
 
 
+class OrchestrationTask(str, Enum):
+    single_image_vqa = "single_image_vqa"
+    text_guided_grounding = "text_guided_grounding"
+    temporal_change = "temporal_change"
+    optical_sar_fusion = "optical_sar_fusion"
+    geospatial_measurement = "geospatial_measurement"
+
+
+class InputModality(str, Enum):
+    optical_multispectral = "optical_multispectral"
+    sar = "sar"
+    unknown = "unknown"
+
+
+class SpecialistState(str, Enum):
+    ready = "ready"
+    planned = "planned"
+
+
+class OrchestrationRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=1000)
+    dataset_ids: list[str] = Field(min_length=1, max_length=2)
+
+
+class InputInspection(BaseModel):
+    dataset_id: str
+    name: str
+    modality: InputModality
+    acquisition_date: str | None = None
+    crs: str
+    shape: list[int]
+    pixel_size_m: float
+    bounds_wgs84: list[float]
+    bands: list[str]
+    source_url: str | None = None
+    metadata_checks: dict[str, bool] = Field(default_factory=dict)
+
+
+class CompatibilityReport(BaseModel):
+    compatible: bool
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+
+
+class SpecialistSelection(BaseModel):
+    specialist_id: str
+    label: str
+    state: SpecialistState
+    capabilities: list[str] = Field(default_factory=list)
+    implementation_note: str
+
+
+class OrchestrationPlanResponse(BaseModel):
+    registry_version: str
+    question: str
+    task: OrchestrationTask
+    route_reason: str
+    required_input_count: int
+    inputs: list[InputInspection]
+    compatibility: CompatibilityReport
+    selected_specialists: list[SpecialistSelection]
+    selected_tools: list[str]
+    executable: bool
+    execution_note: str
+    controller_trace: list[dict[str, Any]] = Field(default_factory=list)
+    internal_reasoning_exposed: bool = False
+
+
 class ToolName(str, Enum):
     inspect_raster_metadata = "inspect_raster_metadata"
     validate_crs = "validate_crs"
