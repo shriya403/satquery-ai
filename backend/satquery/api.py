@@ -17,8 +17,12 @@ from satquery.schemas import (
     OrchestrationPlanResponse,
     OrchestrationRequest,
     QueryRequest,
+    VqaRequest,
+    VqaResponse,
+    VqaStatusResponse,
 )
 from satquery.visualization.preview import render_preview_png, render_spectral_preview_png
+from satquery.vqa import VqaRuntimeUnavailableError, run_remote_sensing_vqa, vqa_status
 
 settings = get_settings()
 
@@ -94,6 +98,29 @@ def orchestration_plan(request: OrchestrationRequest) -> OrchestrationPlanRespon
         return build_orchestration_plan(request)
     except DatasetNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/vqa/status", response_model=VqaStatusResponse)
+def remote_sensing_vqa_status() -> VqaStatusResponse:
+    return vqa_status()
+
+
+@app.post("/api/vqa/query", response_model=VqaResponse)
+def remote_sensing_vqa(request: VqaRequest) -> VqaResponse:
+    try:
+        return run_remote_sensing_vqa(
+            dataset_id=request.dataset_id,
+            question=request.question,
+        )
+    except DatasetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VqaRuntimeUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Remote-sensing VQA inference failed: {exc}",
+        ) from exc
 
 
 @app.post("/api/query", response_model=AnalysisResponse)

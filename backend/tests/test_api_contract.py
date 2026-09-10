@@ -225,3 +225,38 @@ def test_orchestration_optical_sar_route_requires_modalities() -> None:
         for reason in payload["compatibility"]["blocking_reasons"]
     )
 
+def test_vqa_status_is_honest_before_optional_runtime_is_enabled() -> None:
+    response = client.get("/api/vqa/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model_id"] == "AdaptLLM/remote-sensing-Qwen2-VL-2B-Instruct"
+    assert payload["remote_sensing_adapted"] is True
+    assert isinstance(payload["dependencies_available"], bool)
+    assert isinstance(payload["enabled"], bool)
+
+
+def test_vqa_query_returns_503_when_runtime_is_disabled() -> None:
+    response = client.post(
+        "/api/vqa/query",
+        json={
+            "dataset_id": "synthetic-pune-water-fixture",
+            "question": "Describe the land cover and major objects visible in this image.",
+        },
+    )
+    assert response.status_code == 503
+    assert "disabled" in response.json()["detail"].lower()
+
+
+def test_water_analysis_remains_available_with_vqa_disabled() -> None:
+    response = client.post(
+        "/api/query",
+        json={
+            "dataset_id": "synthetic-pune-water-fixture",
+            "question": (
+                "Find water bodies in this image, calculate their approximate "
+                "area, and highlight the largest one."
+            ),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["metrics"]["total_water_area_ha"] > 0

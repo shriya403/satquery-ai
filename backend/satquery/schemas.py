@@ -170,3 +170,39 @@ class DemoDatasetSummary(BaseModel):
     bands: list[str]
     preprocessing: list[str] = Field(default_factory=list)
     usage_note: str
+
+class VqaRequest(BaseModel):
+    dataset_id: str
+    question: str = Field(min_length=3, max_length=1000)
+
+
+class VqaStatusResponse(BaseModel):
+    enabled: bool
+    dependencies_available: bool
+    model_id: str
+    requested_device: str
+    loaded: bool
+    remote_sensing_adapted: bool
+    adaptation_note: str
+    note: str
+
+
+class VqaResponse(BaseModel):
+    dataset_id: str
+    question: str
+    answer: str
+    model_id: str
+    model_family: str
+    remote_sensing_adapted: bool
+    adaptation_note: str
+    source_image: str
+    source_url: str | None = None
+    device: str
+    dtype: str
+    latency_ms: float
+    max_new_tokens: int
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    confidence_note: str
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    limitations: list[str] = Field(default_factory=list)
+

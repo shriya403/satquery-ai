@@ -23,6 +23,10 @@ class Settings:
     allowed_origins: tuple[str, ...]
     max_upload_mb: int
     demo_mode: bool
+    vqa_enabled: bool
+    vqa_model_id: str
+    vqa_device: str
+    vqa_max_new_tokens: int
 
 
 @lru_cache(maxsize=1)
@@ -33,9 +37,22 @@ def get_settings() -> Settings:
     except ValueError:
         max_upload_mb = 256
 
+    vqa_tokens_raw = os.getenv("SATQUERY_VQA_MAX_NEW_TOKENS", "128")
+    try:
+        vqa_max_new_tokens = int(vqa_tokens_raw)
+    except ValueError:
+        vqa_max_new_tokens = 128
+
     return Settings(
         environment=os.getenv("SATQUERY_ENV", "development"),
         allowed_origins=_parse_origins(os.getenv("SATQUERY_ALLOWED_ORIGINS")),
         max_upload_mb=max(1, min(max_upload_mb, 1024)),
         demo_mode=_parse_bool(os.getenv("SATQUERY_DEMO_MODE"), True),
+        vqa_enabled=_parse_bool(os.getenv("SATQUERY_VQA_ENABLED"), False),
+        vqa_model_id=os.getenv(
+            "SATQUERY_VQA_MODEL_ID",
+            "AdaptLLM/remote-sensing-Qwen2-VL-2B-Instruct",
+        ),
+        vqa_device=os.getenv("SATQUERY_VQA_DEVICE", "auto").strip().lower(),
+        vqa_max_new_tokens=max(16, min(vqa_max_new_tokens, 512)),
     )
