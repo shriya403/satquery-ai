@@ -132,3 +132,33 @@ export type SpecialistRegistryResponse = {
   specialists: SpecialistRegistryItem[];
 };
 
+export type VqaStatusResponse = {
+  enabled: boolean;
+  dependencies_available: boolean;
+  model_id: string;
+  requested_device: string;
+  loaded: boolean;
+  remote_sensing_adapted: boolean;
+  adaptation_note: string;
+  note: string;
+};
+
+export type VqaResponse = {
+  dataset_id: string;
+  question: string;
+  answer: string;
+  model_id: string;
+  model_family: string;
+  remote_sensing_adapted: boolean;
+  adaptation_note: string;
+  source_image: string;
+  source_url: string | null;
+  device: string;
+  dtype: string;
+  latency_ms: number;
+  max_new_tokens: number;
+  confidence: number | null;
+  confidence_note: string;
+  provenance: Record<string, unknown>;
+  limitations: string[];
+};

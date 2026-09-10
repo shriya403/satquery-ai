@@ -19,12 +19,17 @@ import {
 import {
   fetchDemoDatasets,
   fetchOrchestrationRegistry,
-  planOrchestration
+  fetchVqaStatus,
+  planOrchestration,
+  previewUrl,
+  runRemoteSensingVqa
 } from "../lib/api";
 import type {
   DemoDataset,
   OrchestrationPlanResponse,
-  SpecialistRegistryResponse
+  SpecialistRegistryResponse,
+  VqaResponse,
+  VqaStatusResponse
 } from "../lib/types";
 import { ThemeControl } from "./ThemeControl";
 
@@ -73,14 +78,22 @@ export function OrchestrationConsole() {
   const [plan, setPlan] = useState<OrchestrationPlanResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [vqaStatus, setVqaStatus] = useState<VqaStatusResponse | null>(null);
+  const [vqaResult, setVqaResult] = useState<VqaResponse | null>(null);
+  const [vqaLoading, setVqaLoading] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([fetchDemoDatasets(), fetchOrchestrationRegistry()])
-      .then(([items, registryPayload]) => {
+    Promise.all([
+      fetchDemoDatasets(),
+      fetchOrchestrationRegistry(),
+      fetchVqaStatus()
+    ])
+      .then(([items, registryPayload, vqaStatusPayload]) => {
         if (!mounted) return;
         setDatasets(items);
         setRegistry(registryPayload);
+        setVqaStatus(vqaStatusPayload);
         const preferred =
           items.find((item) =>
             item.dataset_id.includes("sentinel2-pune-khadakwasla")
@@ -112,6 +125,7 @@ export function OrchestrationConsole() {
     setLoading(true);
     setError(null);
     setPlan(null);
+    setVqaResult(null);
     try {
       const ids =
         includeSecond && secondaryId
@@ -128,6 +142,42 @@ export function OrchestrationConsole() {
       setLoading(false);
     }
   }
+
+
+async function executeVqa() {
+  if (
+    !plan ||
+    plan.task !== "single_image_vqa" ||
+    !plan.executable ||
+    !primaryId
+  ) {
+    return;
+  }
+
+  setVqaLoading(true);
+  setError(null);
+  setVqaResult(null);
+
+  try {
+    const result = await runRemoteSensingVqa(question, primaryId);
+    setVqaResult(result);
+
+    const [statusPayload, registryPayload] = await Promise.all([
+      fetchVqaStatus(),
+      fetchOrchestrationRegistry()
+    ]);
+    setVqaStatus(statusPayload);
+    setRegistry(registryPayload);
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Remote-sensing VQA execution failed."
+    );
+  } finally {
+    setVqaLoading(false);
+  }
+}
 
   return (
     <main className="app-page controller-page theme-transition">
@@ -338,6 +388,108 @@ export function OrchestrationConsole() {
 
           {plan ? (
             <>
+
+              {plan.task === "single_image_vqa" ? (
+                <section className="panel controller-section controller-vqa-panel">
+                  <div className="controller-vqa-head">
+                    <div>
+                      <p className="eyebrow">Executable specialist</p>
+                      <h3>Real Remote-Sensing VQA</h3>
+                      <p className="muted-text">
+                        Run the selected scene through the active remote-sensing-adapted vision-language model.
+                      </p>
+                    </div>
+                    <div
+                      className={`controller-vqa-runtime ${
+                        vqaStatus?.enabled && vqaStatus.dependencies_available
+                          ? "is-ready"
+                          : "is-offline"
+                      }`}
+                    >
+                      {vqaStatus?.enabled && vqaStatus.dependencies_available
+                        ? vqaStatus.loaded
+                          ? "Model loaded"
+                          : "Runtime ready"
+                        : "Runtime unavailable"}
+                    </div>
+                  </div>
+
+                  <div className="controller-vqa-preview">
+                    <img
+                      src={previewUrl(primaryId)}
+                      alt={primary?.name ?? "Selected remote-sensing scene"}
+                    />
+                  </div>
+
+                  <div className="controller-vqa-actions">
+                    <button
+                      type="button"
+                      className="button button-primary"
+                      onClick={executeVqa}
+                      disabled={
+                        vqaLoading ||
+                        !plan.executable ||
+                        !vqaStatus?.enabled ||
+                        !vqaStatus.dependencies_available
+                      }
+                    >
+                      {vqaLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Play className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {vqaLoading ? "Running VQA..." : "Execute VQA"}
+                    </button>
+                    <span className="muted-text">
+                      {vqaStatus?.model_id ?? "VQA runtime status unavailable"}
+                    </span>
+                  </div>
+
+                  {!plan.executable ? (
+                    <div className="alert error-alert">
+                      Execution is blocked until the VQA specialist/runtime is ready.
+                    </div>
+                  ) : null}
+
+                  {vqaResult ? (
+                    <div className="controller-vqa-answer">
+                      <div>
+                        <p className="eyebrow">Model answer</p>
+                        <blockquote>{vqaResult.answer}</blockquote>
+                      </div>
+
+                      <div className="controller-vqa-meta">
+                        <article><span>Model</span><strong>{vqaResult.model_family}</strong></article>
+                        <article><span>Device</span><strong>{vqaResult.device}</strong></article>
+                        <article><span>Runtime</span><strong>{vqaResult.dtype}</strong></article>
+                        <article><span>Latency</span><strong>{(vqaResult.latency_ms / 1000).toFixed(2)} s</strong></article>
+                      </div>
+
+                      <div className="controller-vqa-trust">
+                        <p><strong>Remote-sensing adapted:</strong>{" "}{vqaResult.remote_sensing_adapted ? "Yes" : "No"}</p>
+                        <p><strong>Adaptation:</strong>{" "}{vqaResult.adaptation_note}</p>
+                        <p><strong>Confidence:</strong>{" "}{vqaResult.confidence === null ? "Not calibrated / not reported" : vqaResult.confidence}</p>
+                        <p className="muted-text">{vqaResult.confidence_note}</p>
+                      </div>
+
+                      <div>
+                        <p className="eyebrow">Limitations</p>
+                        <ul className="controller-vqa-limits">
+                          {vqaResult.limitations.map((limitation) => (
+                            <li key={limitation}>{limitation}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <details className="controller-vqa-provenance">
+                        <summary>VQA provenance</summary>
+                        <pre>{JSON.stringify(vqaResult.provenance, null, 2)}</pre>
+                      </details>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
               <section className="panel controller-section">
                 <div className="panel-heading">
                   <Database className="h-4 w-4" aria-hidden="true" />

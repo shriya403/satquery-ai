@@ -2826,3 +2826,26 @@ html[data-theme-ready="true"] .theme-transition {
 @media (max-width:1050px) { .controller-layout { grid-template-columns:1fr; } .controller-input-panel { position:static; } .controller-registry-row { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:700px) { .controller-page { padding:12px; } .controller-status-head { flex-direction:column; } .controller-summary-grid,.controller-inspection-grid,.controller-specialist-grid,.controller-check-grid,.controller-tool-route,.controller-registry-row { grid-template-columns:1fr; } }
 
+/* Stage 6D - executable remote-sensing VQA panel */
+.controller-vqa-panel { display: grid; gap: 18px; }
+.controller-vqa-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.controller-vqa-head h3 { margin: 4px 0 0; font-size: 1.1rem; }
+.controller-vqa-runtime { display: inline-flex; align-items: center; padding: 8px 11px; border: 1px solid var(--border); border-radius: 999px; font-size: .78rem; white-space: nowrap; }
+.controller-vqa-runtime.is-ready { border-color: #22c55e; }
+.controller-vqa-runtime.is-offline { border-color: #f59e0b; }
+.controller-vqa-preview { overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: rgba(0,0,0,.16); }
+.controller-vqa-preview img { display: block; width: 100%; max-height: 420px; object-fit: contain; }
+.controller-vqa-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controller-vqa-answer { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 16px; }
+.controller-vqa-answer blockquote { margin: 0; font-size: 1rem; line-height: 1.65; }
+.controller-vqa-meta { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+.controller-vqa-meta article { padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.controller-vqa-meta span { display: block; margin-bottom: 5px; font-size: .7rem; opacity: .65; text-transform: uppercase; letter-spacing: .08em; }
+.controller-vqa-meta strong { display: block; font-size: .82rem; overflow-wrap: anywhere; }
+.controller-vqa-trust { display: grid; gap: 8px; }
+.controller-vqa-trust p { margin: 0; font-size: .84rem; line-height: 1.55; }
+.controller-vqa-limits { margin: 0; padding-left: 18px; display: grid; gap: 7px; font-size: .82rem; line-height: 1.5; }
+.controller-vqa-provenance summary { cursor: pointer; font-weight: 650; }
+.controller-vqa-provenance pre { margin: 12px 0 0; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .72rem; line-height: 1.45; }
+@media (max-width: 900px) { .controller-vqa-meta { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 620px) { .controller-vqa-head { flex-direction: column; } .controller-vqa-meta { grid-template-columns: 1fr; } }

@@ -3,7 +3,9 @@ import type {
   AoiBounds,
   DemoDataset,
   OrchestrationPlanResponse,
-  SpecialistRegistryResponse
+  SpecialistRegistryResponse,
+  VqaResponse,
+  VqaStatusResponse
 } from "./types";
 
 export const API_BASE =
@@ -74,6 +76,37 @@ export async function planOrchestration(
     body: JSON.stringify({
       question,
       dataset_ids: datasetIds
+    })
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response));
+  }
+  return response.json();
+}
+
+
+export async function fetchVqaStatus(): Promise<VqaStatusResponse> {
+  const response = await fetch(`${API_BASE}/api/vqa/status`, {
+    cache: "no-store"
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response));
+  }
+  return response.json();
+}
+
+export async function runRemoteSensingVqa(
+  question: string,
+  datasetId: string
+): Promise<VqaResponse> {
+  const response = await fetch(`${API_BASE}/api/vqa/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      question,
+      dataset_id: datasetId
     })
   });
   if (!response.ok) {
