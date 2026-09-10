@@ -18,6 +18,8 @@ type EarthStageProps = {
   scenes: DatasetScene[];
   selectedDatasetId: string | null;
   onSceneSelect: (datasetId: string) => void;
+  cinematicSequence?: number;
+  onCinematicComplete?: () => void;
 };
 
 type EarthSceneProps = EarthStageProps & {
@@ -42,6 +44,44 @@ const DEFAULT_VIEW: EarthView = {
   lon: 73.8,
   distance: 3.05
 };
+
+const CINEMATIC_STEPS: Array<{
+  label: string;
+  kicker: string;
+  view: EarthView | "scene";
+  holdMs: number;
+}> = [
+  {
+    label: "Earth",
+    kicker: "Earth observation",
+    view: { lat: 20.0, lon: 78.0, distance: 4.08 },
+    holdMs: 1050
+  },
+  {
+    label: "India",
+    kicker: "National context",
+    view: { lat: 22.5, lon: 78.9, distance: 3.38 },
+    holdMs: 1150
+  },
+  {
+    label: "Maharashtra",
+    kicker: "Regional focus",
+    view: { lat: 19.75, lon: 75.7, distance: 2.87 },
+    holdMs: 1150
+  },
+  {
+    label: "Khadakwasla",
+    kicker: "Target area",
+    view: { lat: 18.44, lon: 73.775, distance: 2.5 },
+    holdMs: 1250
+  },
+  {
+    label: "Sentinel-2 scene",
+    kicker: "Real acquisition locked",
+    view: "scene",
+    holdMs: 1150
+  }
+];
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -158,12 +198,20 @@ function EarthFallback({ scenes, selectedDatasetId, onSceneSelect }: EarthStageP
   );
 }
 
-export function EarthStage({ scenes, selectedDatasetId, onSceneSelect }: EarthStageProps) {
+export function EarthStage({
+  scenes,
+  selectedDatasetId,
+  onSceneSelect,
+  cinematicSequence = 0,
+  onCinematicComplete
+}: EarthStageProps) {
   const reducedMotion = useReducedMotion();
   const [webglState, setWebglState] = useState<"checking" | "available" | "unavailable">("checking");
   const [sceneReady, setSceneReady] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
   const [view, setView] = useState<EarthView>(DEFAULT_VIEW);
+  const [cinematicStep, setCinematicStep] = useState<number | null>(null);
+  const cinematicCompleteRef = useRef(onCinematicComplete);
   const dragState = useRef<{ dragging: boolean; x: number; y: number; pointerId: number | null }>({
     dragging: false,
     x: 0,
@@ -177,6 +225,10 @@ export function EarthStage({ scenes, selectedDatasetId, onSceneSelect }: EarthSt
   );
 
   useEffect(() => {
+    cinematicCompleteRef.current = onCinematicComplete;
+  }, [onCinematicComplete]);
+
+  useEffect(() => {
     setWebglState(shouldForceStaticEarth() || !supportsWebGL() ? "unavailable" : "available");
   }, []);
 
@@ -185,7 +237,7 @@ export function EarthStage({ scenes, selectedDatasetId, onSceneSelect }: EarthSt
   }, [reducedMotion]);
 
   useEffect(() => {
-    if (!selectedScene) {
+    if (!selectedScene || cinematicStep !== null) {
       return;
     }
 
@@ -194,7 +246,67 @@ export function EarthStage({ scenes, selectedDatasetId, onSceneSelect }: EarthSt
       lon: selectedScene.center.lon,
       distance: Math.min(current.distance, 3.15)
     }));
-  }, [selectedScene]);
+  }, [selectedScene, cinematicStep]);
+
+  useEffect(() => {
+    if (!cinematicSequence || !selectedScene) {
+      return;
+    }
+
+    if (reducedMotion) {
+      setAutoRotate(false);
+      setView({
+        lat: selectedScene.center.lat,
+        lon: selectedScene.center.lon,
+        distance: 2.5
+      });
+      setCinematicStep(null);
+      cinematicCompleteRef.current?.();
+      return;
+    }
+
+    let cancelled = false;
+    const timers: number[] = [];
+    setAutoRotate(false);
+    setCinematicStep(0);
+
+    let elapsed = 0;
+    CINEMATIC_STEPS.forEach((step, index) => {
+      timers.push(
+        window.setTimeout(() => {
+          if (cancelled) {
+            return;
+          }
+          setCinematicStep(index);
+          const target =
+            step.view === "scene"
+              ? {
+                  lat: selectedScene.center.lat,
+                  lon: selectedScene.center.lon,
+                  distance: 2.4
+                }
+              : step.view;
+          setView(target);
+        }, elapsed)
+      );
+      elapsed += step.holdMs;
+    });
+
+    timers.push(
+      window.setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+        setCinematicStep(null);
+        cinematicCompleteRef.current?.();
+      }, elapsed + 180)
+    );
+
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [cinematicSequence, reducedMotion, selectedScene]);
 
   function beginDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -296,17 +408,46 @@ export function EarthStage({ scenes, selectedDatasetId, onSceneSelect }: EarthSt
         </EarthErrorBoundary>
       ) : null}
 
-      <div className="earth-control-bar" aria-label="Globe controls">
-        <button className="icon-button earth-control-button" type="button" onClick={rotateWest} title="Rotate view" aria-label="Rotate view">
+      {cinematicStep !== null ? (
+        <div className="earth-cinematic-hud" role="status" aria-live="polite">
+          <div className="earth-cinematic-progress" aria-hidden="true">
+            {CINEMATIC_STEPS.map((step, index) => (
+              <span
+                key={step.label}
+                className={
+                  index < cinematicStep
+                    ? "is-complete"
+                    : index === cinematicStep
+                      ? "is-active"
+                      : ""
+                }
+              />
+            ))}
+          </div>
+          <div className="earth-cinematic-copy">
+            <span>{CINEMATIC_STEPS[cinematicStep].kicker}</span>
+            <strong>{CINEMATIC_STEPS[cinematicStep].label}</strong>
+          </div>
+          <div className="earth-cinematic-breadcrumb" aria-hidden="true">
+            Earth <span>-&gt;</span> India <span>-&gt;</span> Maharashtra <span>-&gt;</span> Khadakwasla
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className={`earth-control-bar ${cinematicStep !== null ? "is-cinematic" : ""}`}
+        aria-label="Globe controls"
+      >
+        <button className="icon-button earth-control-button" type="button" onClick={rotateWest} title="Rotate view" aria-label="Rotate view" disabled={cinematicStep !== null}>
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
         </button>
-        <button className="icon-button earth-control-button" type="button" onClick={() => zoomBy(-0.28)} title="Zoom in" aria-label="Zoom in">
+        <button className="icon-button earth-control-button" type="button" onClick={() => zoomBy(-0.28)} title="Zoom in" aria-label="Zoom in" disabled={cinematicStep !== null}>
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <button className="icon-button earth-control-button" type="button" onClick={() => zoomBy(0.28)} title="Zoom out" aria-label="Zoom out">
+        <button className="icon-button earth-control-button" type="button" onClick={() => zoomBy(0.28)} title="Zoom out" aria-label="Zoom out" disabled={cinematicStep !== null}>
           <Minus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <button className="icon-button earth-control-button" type="button" onClick={resetView} title="Reset view" aria-label="Reset view">
+        <button className="icon-button earth-control-button" type="button" onClick={resetView} title="Reset view" aria-label="Reset view" disabled={cinematicStep !== null}>
           <LocateFixed className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>

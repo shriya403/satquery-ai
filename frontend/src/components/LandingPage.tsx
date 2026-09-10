@@ -148,7 +148,10 @@ export function LandingPage() {
   const [apiMessage, setApiMessage] = useState<string | null>(null);
   const [topic, setTopic] = useState<TopicId>("water");
   const [transitioning, setTransitioning] = useState(false);
+  const [cinematicSequence, setCinematicSequence] = useState(0);
+  const [cinematicActive, setCinematicActive] = useState(false);
   const prefersReducedMotion = useRef(false);
+  const queryInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     prefersReducedMotion.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -197,6 +200,28 @@ export function LandingPage() {
     router.push(workspaceUrl);
   }
 
+  function startCinematicDemo() {
+    const preferredId =
+      datasets.find((dataset) => dataset.dataset_id === REAL_DEMO_DATASET_ID)?.dataset_id ??
+      selectedScene?.dataset.dataset_id ??
+      null;
+
+    if (preferredId) {
+      setSelectedDatasetId(preferredId);
+    }
+    setTopic("water");
+    setCinematicActive(true);
+    setCinematicSequence((current) => current + 1);
+  }
+
+  function finishCinematicDemo() {
+    setCinematicActive(false);
+    window.setTimeout(() => {
+      queryInputRef.current?.focus();
+      queryInputRef.current?.select();
+    }, 120);
+  }
+
   function analyzeScene() {
     if (prefersReducedMotion.current) {
       openWorkspaceNow();
@@ -211,7 +236,13 @@ export function LandingPage() {
     <main className="earth-page app-page theme-transition">
       <section className="earth-landing" id="overview" aria-label="SatQuery Earth scene selector">
         <div className="earth-stars" aria-hidden="true" />
-        <EarthStage scenes={scenes} selectedDatasetId={selectedScene?.dataset.dataset_id ?? null} onSceneSelect={selectScene} />
+        <EarthStage
+          scenes={scenes}
+          selectedDatasetId={selectedScene?.dataset.dataset_id ?? null}
+          onSceneSelect={selectScene}
+          cinematicSequence={cinematicSequence}
+          onCinematicComplete={finishCinematicDemo}
+        />
 
         <nav className="earth-nav" aria-label="Primary">
           <Link className="wordmark" href="/">
@@ -236,9 +267,21 @@ export function LandingPage() {
           <p className="eyebrow">Evidence-first remote sensing assistant</p>
           <h1 className="hero-title">Query the Earth with Natural Language</h1>
           <p className="hero-copy">Select an API-backed scene, carry a natural-language question forward, and inspect the satellite evidence behind the answer.</p>
-          <div className={`status-pill ${statusClass(apiStatus)}`} data-testid="earth-api-status">
-            <span className="status-dot" aria-hidden="true" />
-            {statusLabel(apiStatus)}
+          <div className="earth-hero-status-row">
+            <div className={`status-pill ${statusClass(apiStatus)}`} data-testid="earth-api-status">
+              <span className="status-dot" aria-hidden="true" />
+              {statusLabel(apiStatus)}
+            </div>
+            <button
+              type="button"
+              className="cinematic-demo-button"
+              onClick={startCinematicDemo}
+              disabled={!selectedScene || cinematicActive}
+              data-testid="start-cinematic-demo"
+            >
+              <span className="cinematic-demo-dot" aria-hidden="true" />
+              {cinematicActive ? "Cinematic sequence running" : "Start jury sequence"}
+            </button>
           </div>
         </div>
 
@@ -328,12 +371,21 @@ export function LandingPage() {
             Query
           </label>
           <textarea
+            ref={queryInputRef}
             id="landing-query"
             data-testid="landing-query"
-            className="field earth-query"
+            className={`field earth-query ${!cinematicActive && cinematicSequence > 0 ? "is-demo-ready" : ""}`}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+          {!cinematicActive && cinematicSequence > 0 ? (
+            <div className="demo-ready-callout" role="status">
+              <span className="demo-ready-index">LIVE</span>
+              <span>
+                Scene locked. Type the question live, then run the verified analysis.
+              </span>
+            </div>
+          ) : null}
           {queryHandoffNotice ? (
             <div className="alert mt-3" role="status">
               {queryHandoffNotice}
